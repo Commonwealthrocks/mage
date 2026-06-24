@@ -1,0 +1,129 @@
+## tooltips
+## last updated: 17/06/2026
+## dev comments are parsed and indicated with a "#" and anything after it
+## to define a text segment, you use the following;
+
+## msg="""
+## ...
+## """
+
+default_output_path="""
+Default output PATH.
+
+The default output PATH that MAGE will use when encrypting and or decrypting
+an archive; the standard and recommended prefix is "." which is used to indicate
+the sibling directory / location of the selected file(s).
+"""
+
+default_extension="""
+Default extension.
+
+The default file extension MAGE will use; the default being ".mage". About any file
+extension is supported, with the format of ".[anything after]".
+
+Keep in mind, the .mage file extension will be used for shell context intergation, no
+other extension will work.
+"""
+
+mute_sfx="""
+Mute SFX.
+
+Mute any and all sound effects from playing in MAGE.
+"""
+
+sfx_vol="""
+SFX volume.
+
+Adjust how loud sound effects play in MAGE.
+"""
+
+include_hidden="""
+Include hidden files / directories.
+
+When enabled, MAGE will also package any files with the Windows hidden attribute to an archive when encrypting;
+otherwise if disabled hidden files will not be added to archives.
+"""
+
+copy_file_properties="""
+Copy file metadata.
+
+When enabled MAGE will apply / copy custom file / folder properties, this does not include any system-harmful properties.
+This is also mostly intended for Windows.
+"""
+
+chunk_size="""
+Chunk size.
+
+Adjust the chunk size to be used by MAGE during encryption and decryption.
+A larger chunk size uses more memory but can slightly improve performance.
+"""
+
+default_cipher="""
+Default AEAD cipher.
+
+AES-256-GCM (OpenSSL based) is highly optimized for x86 and x64 CPUs that support a technology
+called AES-NI (Advanced Encryption Standard - New Instructions) which greatly accelerates the overall
+computing speed of AES-256-GCM and making it significantly faster than XChaCha20-Poly1305.
+
+XChaCha20-Poly1305 (NaCl based) is a generally well optimized algorithm for encryption which works
+great on most CPUs / machines that don't support AES-NI; resulting in a much faster target speed than
+AES-256-GCM if AES-NI is unavailable.
+
+Overall both algorithms are equally secure, there is no definitive "better" choice; just depends on your preference
+and personal restraints.
+"""
+
+default_argon2_time="""
+Argon2id time cost.
+
+Set the time cost (number of iterations) for Argon2id key derivation; higher values increase resistance
+against bruteforce attacks but take more time to compute. A time cost of 4-8 is generally recommended.
+"""
+
+default_argon2_memory="""
+Argon2id memory cost.
+
+Set the memory cost for Argon2id key derivation, higher values increase security against ASIC / GPU
+attacks but require more RAM to compute. The general recommended RAM cost is 96MBs - 128MBs.
+"""
+
+default_argon2_parallelism="""
+Default Argon2id parallelism.
+
+Set the number of threads for Argon2id key derivation. This determines the degree of parallelism
+used during key derivation; this can prevent multi-cored GPU / ASIC attacks, and the overall recommended
+amount is 2 - 4 cores
+"""
+
+default_compression_algo="""
+Compression algorithm.
+
+ZSTD is the default algorithm MAGE picks; this algorithm is a mix between high compression rations (almost
+on par as LZMA2) while maintaing a non-insufferable speed / general compression time cost. For most use cases it
+is recommended to use the "Good" prefix.
+
+LZMA2 is the same technology that 7-zip uses to squeeze out every last byte for the cost of time. LZMA2 is slow, compute
+intensive and relies on complex algorithms to; as said, reduce file sizes as much as possible.
+"""
+
+default_compression_preset="""
+Compression preset.
+
+For both ZSTD and LZMA2 there are four presets, "Store", "Fast", "Good" and "ULTRAKILL"; each algorithm has different levels depending
+on their mode but for most use cases it is recommended to use ZSTD with the "Good" preset selected.
+"""
+
+use_raw_compression="""
+Use raw compression levels.
+
+When this option is enabled instead of relying on compression presets you can manually adjust them for each algorithm,
+this option is only recommended if you are familiar with both of the libraries and know your personal preference.
+"""
+
+default_compression_raw="""
+Raw compression level.
+
+Each algorithm has a unique scale for the levels; ZSTD supports all the way from 0 (no compression / store) to 22
+which is best for file sizes but most costly and takes the longest. While LZMA2 supports levels from 0 - 9, each level
+will always be more intensive than ZSTD and it is recommended to pick LZMA2's levels with caution.
+"""
