@@ -1271,8 +1271,8 @@ namespace pk::ui::outs
         QLabel *lbl_info = new QLabel(
             "Version: v0.1a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
-            "Made by Common, just Common.\n"
-            "Doći ću ti u snovima...",
+            "Made by: Common, just Common.\n"
+            "Audited by: no one. ",
             &dialog);
         layout->addWidget(lbl_info);
         QFrame *line2 = new QFrame(&dialog);
