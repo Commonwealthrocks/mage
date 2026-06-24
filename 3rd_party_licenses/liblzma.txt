@@ -1,0 +1,9 @@
+XZ Utils / liblzma
+
+Copyright (C) The XZ Utils authors and contributors.
+
+liblzma is licensed under the BSD Zero Clause License (0BSD).
+
+Some auxiliary components (tools, build scripts, or bundled utilities)
+may be licensed under GPL or LGPL. See upstream project for full details:
+https://tukaani.org/xz/

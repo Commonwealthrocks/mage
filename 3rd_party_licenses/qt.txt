@@ -1,0 +1,16 @@
+======================================================================
+Qt Toolkit Notice
+======================================================================
+This application uses the Qt Toolkit (https://www.qt.io/), licensed 
+under the GNU Lesser General Public License, version 3 (LGPL-3.0).
+
+The source code for the Qt Toolkit is available at https://download.qt.io/
+
+You may obtain a copy of the LGPL-3.0 license at:
+https://gnu.org
+
+This application may be dynamically or statically linked against the Qt libraries. 
+In either case, because the source code for this application is provided as 
+Open Source Software under the MIT license, users are fully permitted and 
+technically able to modify the Qt libraries and re-link this application 
+against their modified versions, in accordance with the LGPL-3.0 terms.
