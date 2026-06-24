@@ -1,0 +1,2 @@
+magick _/256.png _/128.png _/32.png ./mage.ico
+magick _/b256.png _/b128.png _/b32.png ./b_mage.ico
