@@ -1,4 +1,4 @@
 **/build
 **/Output
 **/dev ## dev is an origin of main, not applicable for me
-**/.exe
+**/exe
