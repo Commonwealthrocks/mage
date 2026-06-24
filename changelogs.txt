@@ -1,0 +1,37 @@
+## changelogs.txt
+## last updated: 24/06/2026
+## scroll all the way down for latest logs from now on
+
+VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
+- Created path_handler.cpp to handle Windows or UNIX related PATH issues and
+  or attacks.
+- Created Argon2ID hashing system.
+- Created secure memory system with locked memory pages.
+- Created cipher / algorithm differations.
+- Replaced NaCl's AES-256-GCM with OpenSSL's for performance boost.
+- Created the MAGE file format (MAGE\); and general archive structure.
+- Implement Qt6 GUI.
+- Add multiple dialogs (example the archive creation dialog in outs.cpp)
+  and hook up QtSignals.
+- Added configurable KDF (Argon2ID) settings.
+- Created settings being saved to mage.json in %appdata%.
+- Added settings clamping to prevent wrongful tampering at runtime.
+- Added human-readable error messages, since I am not a robot.
+- Added sound effects via sfx.cpp.
+- Added dedicated stylesheet.
+- Added keyfile support (CTRL + SHIFT + K) for #ThosePeople.
+- Hardened memory protection so keyfiles and passwords are wiped from memory properly.
+- Added checks to prevent archiving the output file into itself.
+- Added checks to prevent encrypting an already encrypted archive.
+- Fixed UI issues in the settings and decrypt dialogs, and added CAPS lock detection.
+- Locked all dialogs to fixed sizes to prevent the layouts from breaking.
+- Drastically improved archive processing speeds by overhauling file I / O and compression logic.
+- Prevented silent archive corruption when running out of disk space.
+- Added setting to disable mouse clicking...?
+- Added static build option to CMakeLists.txt; sure took a while.
+- Added dynamic Qt6 building with windeploy.
+- Added zipbomb detection.
+- Added origin and compressed size to file format.
+- Added shortcuts and shortcuts dialog.
+- Added about dialog.
+- Removed Herobrine.
