@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 24/06/2026
+// last updated: 27/06/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -1162,6 +1162,22 @@ namespace pk::ui::outs
         _cmp_raw_lvl->setValue(pk::cfg::settings::instance().def_cmp_lvl());
         _cmp_raw_lvl->setContextMenuPolicy(Qt::NoContextMenu);
         form_comp->addRow("Default raw level:", _cmp_raw_lvl);
+        if (tooltips.contains("default_cipher"))
+            algo_combo->setToolTip(tooltips["default_cipher"]);
+        if (tooltips.contains("default_argon2_time"))
+            s_tc->setToolTip(tooltips["default_argon2_time"]);
+        if (tooltips.contains("default_argon2_memory"))
+            s_mem_cost->setToolTip(tooltips["default_argon2_memory"]);
+        if (tooltips.contains("default_argon2_parallelism"))
+            s_cores->setToolTip(tooltips["default_argon2_parallelism"]);
+        if (tooltips.contains("default_compression_algo"))
+            cmp_algo_combo->setToolTip(tooltips["default_compression_algo"]);
+        if (tooltips.contains("default_compression_preset"))
+            cmp_preset_combo->setToolTip(tooltips["default_compression_preset"]);
+        if (tooltips.contains("use_raw_compression"))
+            cmp_use_raw->setToolTip(tooltips["use_raw_compression"]);
+        if (tooltips.contains("default_compression_raw"))
+            _cmp_raw_lvl->setToolTip(tooltips["default_compression_raw"]);
         auto update_comp_ui = [this, form_comp]()
         {
             int algo = cmp_algo_combo->currentIndex();
