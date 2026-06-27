@@ -1038,10 +1038,10 @@ namespace pk::ui::outs
         layout_gen->addLayout(chunk_layout);
         QString tooltips_path = QCoreApplication::applicationDirPath() + "/assets/txt_data/tooltips";
         QMap<QString, QString> tooltips = parse_tooltips(tooltips_path);
-        if (tooltips.contains("def_output_path"))
-            def_output->setToolTip(tooltips["def_output_path"]);
-        if (tooltips.contains("def_ext"))
-            def_ext__->setToolTip(tooltips["def_ext"]);
+        if (tooltips.contains("default_output_path"))
+            def_output->setToolTip(tooltips["default_output_path"]);
+        if (tooltips.contains("default_extension"))
+            def_ext__->setToolTip(tooltips["default_extension"]);
         if (tooltips.contains("mute_sfx"))
             mute_sfx_v->setToolTip(tooltips["mute_sfx"]);
         if (tooltips.contains("sfx_vol"))
@@ -1053,6 +1053,8 @@ namespace pk::ui::outs
         if (tooltips.contains("chunk_size"))
             chunk_size_used->setToolTip(tooltips["chunk_size"]);
         QCheckBox *m_disable_rc = new QCheckBox("Disable mouse clicking", this);
+        if (tooltips.contains("disable_mouse_clicking"))
+            m_disable_rc->setToolTip(tooltips["disable_mouse_clicking"]);
         layout_gen->addWidget(m_disable_rc);
         connect(m_disable_rc, &QCheckBox::clicked, this, []()
                 {
