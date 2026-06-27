@@ -1,5 +1,5 @@
 ## CMakeLists.txt
-## last updated: 24/06/2026
+## last updated: 27/06/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
