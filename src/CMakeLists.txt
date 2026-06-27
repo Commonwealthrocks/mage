@@ -114,11 +114,27 @@ else()
             "PATH=${QT_BIN_DIR};$ENV{PATH}"
             ${QT_BIN_DIR}/windeployqt.exe
             --no-translations 
-            --compiler-runtime 
             "$<TARGET_FILE:mage>"
         COMMENT "Running windeployqt to copy Qt6 DLLs to the build folder..."
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
+
+    set(MSYS2_DLLS
+        "libgcc_s_seh-1.dll"
+        "libstdc++-6.dll"
+        "libwinpthread-1.dll"
+        "libsodium-26.dll"
+        "libzstd.dll"
+        "liblzma-5.dll"
+        "libcrypto-3-x64.dll"
+    )
+    foreach(DLL IN LISTS MSYS2_DLLS)
+        add_custom_command(TARGET mage POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${QT_BIN_DIR}/${DLL}"
+            "$<TARGET_FILE_DIR:mage>/${DLL}"
+        )
+    endforeach()
 endif()
 message(STATUS "MAGE v${PROJECT_VERSION} - build type: ${CMAKE_BUILD_TYPE}  static: ${MAGE_STATIC_BUILD}")
 message(STATUS "Toolchain: ${CMAKE_CXX_COMPILER}")
