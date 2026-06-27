@@ -1,5 +1,5 @@
 // cmp_e.hpp
-// last updated: 17/06/2026
+// last updated: 27/06/2026
 #pragma once
 #include <vector>
 #include <cstdint>
@@ -8,9 +8,8 @@ namespace pk::crypto::cmp_e
 {
     enum class algorithm : uint8_t
     {
-        none = 0,
-        zstd = 1,
-        lzma2 = 2
+        zstd = 0,
+        lzma2 = 1
     };
 
     class stream_cmp
