@@ -1,5 +1,5 @@
 ## tooltips
-## last updated: 17/06/2026
+## last updated: 27/06/2026
 ## dev comments are parsed and indicated with a "#" and anything after it
 ## to define a text segment, you use the following;
 
@@ -126,4 +126,10 @@ Raw compression level.
 Each algorithm has a unique scale for the levels; ZSTD supports all the way from 0 (no compression / store) to 22
 which is best for file sizes but most costly and takes the longest. While LZMA2 supports levels from 0 - 9, each level
 will always be more intensive than ZSTD and it is recommended to pick LZMA2's levels with caution.
+"""
+
+disable_mouse_clicking="""
+Disable mouse clicking.
+
+Do you really need a tooltip for this?
 """
