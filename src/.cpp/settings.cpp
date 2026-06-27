@@ -1,5 +1,5 @@
 // settings.cpp
-// last updated: 17/06/2026
+// last updated: 27/06/2026
 #include "../.hpp/settings.hpp"
 #include <QStandardPaths>
 #include <QDir>
@@ -93,11 +93,11 @@ namespace pk::cfg
         if (obj.contains("def_cores"))
             def_cores_v = std::clamp(obj["def_cores"].toInt(), 1, 64);
         if (obj.contains("def_cmp_algorithm"))
-            def_cmp_algorithm_v = std::clamp(obj["def_cmp_algorithm"].toInt(), 0, 2);
+            def_cmp_algorithm_v = std::clamp(obj["def_cmp_algorithm"].toInt(), 0, 1);
         if (obj.contains("def_cmp_preset"))
-            def_cmp_preset_v = std::clamp(obj["def_cmp_preset"].toInt(), 0, 2);
+            def_cmp_preset_v = std::clamp(obj["def_cmp_preset"].toInt(), 0, 3);
         if (obj.contains("def_cmp_lvl"))
-            def_cmp_raw = std::clamp(obj["def_cmp_lvl"].toInt(), 1, 22);
+            def_cmp_raw = std::clamp(obj["def_cmp_lvl"].toInt(), 0, 22);
         if (obj.contains("ss_raw_cmp"))
             __use_raw_cmp = obj["ss_raw_cmp"].toBool();
     }
