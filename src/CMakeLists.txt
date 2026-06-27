@@ -105,7 +105,6 @@ if(MAGE_STATIC_BUILD)
     target_link_options(mage PRIVATE -static -static-libgcc -static-libstdc++)
 else()
     message(STATUS "dynamic (df)")
-    # Get the Qt bin directory
     get_target_property(QT_QMAKE_LOCATION Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIR "${QT_QMAKE_LOCATION}" DIRECTORY)
     
@@ -115,26 +114,13 @@ else()
             ${QT_BIN_DIR}/windeployqt.exe
             --no-translations 
             "$<TARGET_FILE:mage>"
-        COMMENT "Running windeployqt to copy Qt6 DLLs to the build folder..."
+        COMMENT "Copying Qt6..."
         WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     )
-
-    set(MSYS2_DLLS
-        "libgcc_s_seh-1.dll"
-        "libstdc++-6.dll"
-        "libwinpthread-1.dll"
-        "libsodium-26.dll"
-        "libzstd.dll"
-        "liblzma-5.dll"
-        "libcrypto-3-x64.dll"
+    add_custom_command(TARGET mage POST_BUILD
+        COMMAND bash "${CMAKE_SOURCE_DIR}/deploy_deps.sh" "$<TARGET_FILE:mage>" "$<TARGET_FILE_DIR:mage>"
+        COMMENT "Copying the entire MSYS2 fucking env..."
     )
-    foreach(DLL IN LISTS MSYS2_DLLS)
-        add_custom_command(TARGET mage POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${QT_BIN_DIR}/${DLL}"
-            "$<TARGET_FILE_DIR:mage>/${DLL}"
-        )
-    endforeach()
 endif()
 message(STATUS "MAGE v${PROJECT_VERSION} - build type: ${CMAKE_BUILD_TYPE}  static: ${MAGE_STATIC_BUILD}")
 message(STATUS "Toolchain: ${CMAKE_CXX_COMPILER}")
