@@ -454,13 +454,12 @@ namespace pk::ui::outs
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
         cmp_algo_combo = new QComboBox(this);
-        cmp_algo_combo->addItem("None");
         cmp_algo_combo->addItem("ZSTD");
         cmp_algo_combo->addItem("LZMA2");
         cmp_algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cmp_algorithm());
         form_comp->addRow("Algorithm:", cmp_algo_combo);
         cmp_preset_combo = new QComboBox(this);
-        cmp_preset_combo->addItem("None");
+        cmp_preset_combo->addItem("Store");
         cmp_preset_combo->addItem("Normal");
         cmp_preset_combo->addItem("Good");
         cmp_preset_combo->addItem("ULTRAKILL");
@@ -486,29 +485,20 @@ namespace pk::ui::outs
                     label->setEnabled(enabled);
                 }
             };
-            if (algo == 0)
+            set_enabled(cmp_use_raw, true);
+            if (use_raw)
             {
                 set_enabled(cmp_preset_combo, false);
-                set_enabled(cmp_use_raw, false);
-                set_enabled(_cmp_raw_lvl, false);
+                set_enabled(_cmp_raw_lvl, true);
+                if (algo == 0)
+                    _cmp_raw_lvl->setRange(0, 22);
+                else if (algo == 1)
+                    _cmp_raw_lvl->setRange(0, 9);
             }
             else
             {
-                set_enabled(cmp_use_raw, true);
-                if (use_raw)
-                {
-                    set_enabled(cmp_preset_combo, false);
-                    set_enabled(_cmp_raw_lvl, true);
-                    if (algo == 1)
-                        _cmp_raw_lvl->setRange(0, 22);
-                    else if (algo == 2)
-                        _cmp_raw_lvl->setRange(0, 9);
-                }
-                else
-                {
-                    set_enabled(cmp_preset_combo, true);
-                    set_enabled(_cmp_raw_lvl, false);
-                }
+                set_enabled(cmp_preset_combo, true);
+                set_enabled(_cmp_raw_lvl, false);
             }
         };
         connect(cmp_algo_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, update_comp_ui);
@@ -734,33 +724,32 @@ namespace pk::ui::outs
         }
         uint8_t comp_algo = cmp_algo_combo->currentIndex();
         int8_t comp_level = 0;
-        if (comp_algo != 0)
+        if (cmp_use_raw->isChecked())
         {
-            if (cmp_use_raw->isChecked())
+            comp_level = _cmp_raw_lvl->value();
+        }
+        else
+        {
+            int preset = cmp_preset_combo->currentIndex();
+            if (preset == 0)
+                comp_level = 0;
+            else if (comp_algo == 0)
             {
-                comp_level = _cmp_raw_lvl->value();
+                if (preset == 1)
+                    comp_level = 3;
+                else if (preset == 2)
+                    comp_level = 9;
+                else if (preset == 3)
+                    comp_level = 19;
             }
-            else
+            else if (comp_algo == 1)
             {
-                int preset = cmp_preset_combo->currentIndex();
-                if (comp_algo == 1)
-                {
-                    if (preset == 1)
-                        comp_level = 3;
-                    else if (preset == 2)
-                        comp_level = 9;
-                    else if (preset == 3)
-                        comp_level = 19;
-                }
-                else if (comp_algo == 2)
-                {
-                    if (preset == 1)
-                        comp_level = 3;
-                    else if (preset == 2)
-                        comp_level = 6;
-                    else if (preset == 3)
-                        comp_level = 9;
-                }
+                if (preset == 1)
+                    comp_level = 3;
+                else if (preset == 2)
+                    comp_level = 6;
+                else if (preset == 3)
+                    comp_level = 9;
             }
         }
         worker->ss_def_pk_params(
@@ -1144,13 +1133,12 @@ namespace pk::ui::outs
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
         cmp_algo_combo = new QComboBox(this);
-        cmp_algo_combo->addItem("None");
         cmp_algo_combo->addItem("ZSTD");
         cmp_algo_combo->addItem("LZMA2");
         cmp_algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cmp_algorithm());
         form_comp->addRow("Default Algorithm:", cmp_algo_combo);
         cmp_preset_combo = new QComboBox(this);
-        cmp_preset_combo->addItem("None");
+        cmp_preset_combo->addItem("Store");
         cmp_preset_combo->addItem("Normal");
         cmp_preset_combo->addItem("Good");
         cmp_preset_combo->addItem("ULTRAKILL");
@@ -1192,29 +1180,20 @@ namespace pk::ui::outs
                     label->setEnabled(enabled);
                 }
             };
-            if (algo == 0)
+            set_enabled(cmp_use_raw, true);
+            if (use_raw)
             {
                 set_enabled(cmp_preset_combo, false);
-                set_enabled(cmp_use_raw, false);
-                set_enabled(_cmp_raw_lvl, false);
+                set_enabled(_cmp_raw_lvl, true);
+                if (algo == 0)
+                    _cmp_raw_lvl->setRange(0, 22);
+                else if (algo == 1)
+                    _cmp_raw_lvl->setRange(0, 9);
             }
             else
             {
-                set_enabled(cmp_use_raw, true);
-                if (use_raw)
-                {
-                    set_enabled(cmp_preset_combo, false);
-                    set_enabled(_cmp_raw_lvl, true);
-                    if (algo == 1)
-                        _cmp_raw_lvl->setRange(0, 22);
-                    else if (algo == 2)
-                        _cmp_raw_lvl->setRange(0, 9);
-                }
-                else
-                {
-                    set_enabled(cmp_preset_combo, true);
-                    set_enabled(_cmp_raw_lvl, false);
-                }
+                set_enabled(cmp_preset_combo, true);
+                set_enabled(_cmp_raw_lvl, false);
             }
         };
         connect(cmp_algo_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, update_comp_ui);
