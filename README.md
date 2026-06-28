@@ -14,6 +14,7 @@ Archive creation and encryption software made in **C++** with `Qt6`, `NaCl`, `Op
 - Strict archive format (`\MAGE`) which ensures no metadata leaking.
 - Compression with `ZSTD` or `LZMA2` with optional raw level configuration.
 - Keyfile support and generation of 512-byte random keyfiles (`.mgkx`).
+- Password + keyfiles as the same entropy source.
 - Secure memory handling of passwords and **Argon2ID** hashes.
 - Human readable errors. Surprising!
 - Much more for you to see in the app.
@@ -26,7 +27,7 @@ In **MAGE** the `Settings` tab and `Archive creation` tab all originally rely on
 If you are compiling **MAGE** yourself, especially with the dynamic build option, you can strip out certain baked in `Qt6` DLLs example ones for networking and TLS. Those are generally not needed to run **MAGE**.
 
 ## **Building**
-To compile **MAGE** yourself you need to make sure you are on a more modern **Windows** like **Windows 10** or **Windows 11* and have **MSYS2 UCRT64** installed to pull the following libraries needed for **MAGE**...
+To compile **MAGE** yourself you need to make sure you are on a more modern **Windows** like **Windows 10** or **Windows 11** and have **MSYS2 UCRT64** installed to pull the following libraries needed for **MAGE**...
 ```bash
 pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6 mingw-w64-ucrt-x86_64-libsodium mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-xz
 ```
