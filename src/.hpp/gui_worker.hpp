@@ -1,5 +1,5 @@
 // gui_worker.hpp
-// last updated: 17/06/2026
+// last updated: 28/06/2026
 #pragma once
 #include <QThread>
 #include <QString>
@@ -24,7 +24,6 @@ namespace pk::ui::worker
             const std::vector<std::string> &roots,
             const QString &out_path,
             const QString &password,
-            bool use_keyfile,
             const QString &keyfile_path,
             pk::crypto::cipher::algorithm algo,
             const pk::crypto::kdf::kdf_cfg &kdf_cfg,
@@ -37,7 +36,6 @@ namespace pk::ui::worker
             const QString &in_path,
             const QString &out_dir,
             const QString &password,
-            bool use_keyfile,
             const QString &keyfile_path);
     signals:
         void success();
@@ -53,7 +51,6 @@ namespace pk::ui::worker
         std::vector<std::string> roots_f_rooted;
         std::string output_path;
         std::string password;
-        bool use_keyfile_yeah;
         std::string keyfile_path;
         pk::crypto::cipher::algorithm algo;
         pk::crypto::kdf::kdf_cfg __kdf_cfg;
