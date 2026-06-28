@@ -1289,7 +1289,7 @@ namespace pk::ui::outs
         line1->setFrameShadow(QFrame::Sunken);
         layout->addWidget(line1);
         QLabel *lbl_info = new QLabel(
-            "Version: v0.1a\n"
+            "Version: v0.2a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
             "Made by: Common, just Common.\n"
             "Audited by: no one. ",
