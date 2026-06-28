@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 18/06/2026
+// last updated: 28/06/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -38,7 +38,7 @@ namespace pk::ui::worker
         this->password = password.toUtf8().toStdString();
         use_keyfile_yeah = use_keyfile;
         this->keyfile_path = keyfile_path.toUtf8().toStdString();
-        algo = algo;
+        this->algo = algo;
         __kdf_cfg = kdf_cfg;
         _include_hidden = include_hidden;
         __cp_metadata = cp_metadata;
@@ -232,8 +232,7 @@ namespace pk::ui::worker
                                                            qApp, [&proceed]()
                                                            { 
                                                                pk::ui::sfx::play_info();
-                                                               proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); 
-                                                           },
+                                                               proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
                                                            Qt::BlockingQueuedConnection);
                                                        return proceed;
                                                    });
