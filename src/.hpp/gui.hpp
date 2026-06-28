@@ -1,5 +1,5 @@
 // gui.hpp
-// last updated: 17/06/2026
+// last updated: 28/06/2026
 #pragma once
 #include <QMainWindow>
 #include <QPushButton>
@@ -11,6 +11,7 @@ namespace pk::ui
     public:
         explicit gui(QWidget *parent = nullptr);
         ~gui() override = default;
+        void handle_args(const QString &mode, const QString &path);
 
     private slots:
         void on_create_archive_clicked();
@@ -18,7 +19,7 @@ namespace pk::ui
         void on_settings_clicked();
         void on_keybinds_clicked();
         void on_about_clicked();
-
+        // spaces refuse to go here, ok
     private:
         void setup_ui();
         void dark_theme();
