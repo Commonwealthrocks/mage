@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 17/06/2026
+// last updated: 28/06/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -76,7 +76,7 @@ namespace pk::ui::outs
     {
         Q_OBJECT
     public:
-        explicit cd_mk_archive(QWidget *parent = nullptr);
+        explicit cd_mk_archive(QWidget *parent = nullptr, const QString &initial_path = "");
         ~cd_mk_archive() override = default;
 
     protected:
@@ -117,7 +117,7 @@ namespace pk::ui::outs
     {
         Q_OBJECT
     public:
-        explicit cd_decrypt_archive(QWidget *parent = nullptr);
+        explicit cd_decrypt_archive(QWidget *parent = nullptr, const QString &initial_path = "");
         ~cd_decrypt_archive() override = default;
 
     protected:
