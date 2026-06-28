@@ -20,6 +20,7 @@
 #include <QSlider>
 #include <QWheelEvent>
 #include <QIcon>
+#include <QTabBar>
 class scroll_filter : public QObject
 {
 public:
@@ -30,6 +31,7 @@ public:
         {
             if (qobject_cast<QComboBox *>(obj) ||
                 qobject_cast<QAbstractSpinBox *>(obj) ||
+                qobject_cast<QTabBar *>(obj) ||
                 qobject_cast<QSlider *>(obj))
             {
                 auto *wheelEvent = static_cast<QWheelEvent *>(event);
