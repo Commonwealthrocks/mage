@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 24/06/2026
+// last updated: 28/06/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -70,6 +70,12 @@ int main(int argc, char *argv[])
     app.installEventFilter(new pk::ui::shortcuts::shortcut_filter(&app));
     pk::ui::sfx::preload();
     pk::ui::gui window;
+    QStringList args = app.arguments();
+    if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt"))
+    {
+        window.handle_args(args[1] == "--encrypt" ? "encrypt" : "decrypt", args[2]);
+        return 0;
+    }
     window.show();
     return app.exec();
 }
