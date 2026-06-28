@@ -101,8 +101,6 @@ namespace pk::ui::outs
         QSpinBox *s_tc;
         QSpinBox *s_mem_cost;
         QSpinBox *s_cores;
-        QStackedWidget *input_stack;
-        bool m_use_keyfile_mode = false;
         QLineEdit *password_v;
         QLineEdit *keyfile_path_v;
         QCheckBox *_include_hidden;
@@ -134,8 +132,6 @@ namespace pk::ui::outs
         void update_default_path(const QString &path);
         QLineEdit *_output_path;
         QLineEdit *output_dir_;
-        QStackedWidget *input_stack;
-        bool m_use_keyfile_mode = false;
         QLineEdit *password_v;
         QLineEdit *keyfile_path_v;
     };
