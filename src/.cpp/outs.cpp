@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 27/06/2026
+// last updated: 28/06/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -48,6 +48,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QCoreApplication>
+#include "../.hpp/cm.hpp"
 namespace pk::ui::outs
 {
     static QMap<QString, QString> parse_tooltips(const QString &file_path)
@@ -347,7 +348,7 @@ namespace pk::ui::outs
     {
         reject();
     }
-    cd_mk_archive::cd_mk_archive(QWidget *parent)
+    cd_mk_archive::cd_mk_archive(QWidget *parent, const QString &initial_path)
         : QDialog(parent)
     {
         setWindowTitle("Create archive");
@@ -356,6 +357,11 @@ namespace pk::ui::outs
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
+        if (!initial_path.isEmpty())
+        {
+            file_list->addItem(initial_path);
+            update_default_path(initial_path);
+        }
     }
     void cd_mk_archive::setup_ui()
     {
@@ -783,7 +789,7 @@ namespace pk::ui::outs
     {
         reject();
     }
-    cd_decrypt_archive::cd_decrypt_archive(QWidget *parent)
+    cd_decrypt_archive::cd_decrypt_archive(QWidget *parent, const QString &initial_path)
         : QDialog(parent)
     {
         setWindowTitle("Decrypt archive");
@@ -792,6 +798,11 @@ namespace pk::ui::outs
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
+        if (!initial_path.isEmpty())
+        {
+            _output_path->setText(initial_path);
+            update_default_path(initial_path);
+        }
     }
     void cd_decrypt_archive::setup_ui()
     {
@@ -988,6 +999,8 @@ namespace pk::ui::outs
     {
         QVBoxLayout *main_layout = new QVBoxLayout(this);
         QTabWidget *tabs = new QTabWidget(this);
+        tabs->setUsesScrollButtons(true);
+        tabs->setElideMode(Qt::ElideNone);
         QWidget *tab_gen = new QWidget();
         QVBoxLayout *layout_gen = new QVBoxLayout(tab_gen);
         QFormLayout *form_out = new QFormLayout();
@@ -1127,7 +1140,7 @@ namespace pk::ui::outs
         s_cores->setValue(pk::cfg::settings::instance().def_cores());
         s_cores->setContextMenuPolicy(Qt::NoContextMenu);
         form_enc->addRow("Default Argon2id time cost:", s_tc);
-        form_enc->addRow("Default Argon2id mem_:", s_mem_cost);
+        form_enc->addRow("Default Argon2id memory cost:", s_mem_cost);
         form_enc->addRow("Default Argon2id parallelism:", s_cores);
         tabs->addTab(tab_enc, "Encryption and KDF");
         QWidget *tab_comp = new QWidget();
@@ -1200,6 +1213,41 @@ namespace pk::ui::outs
         connect(cmp_use_raw, &QCheckBox::checkStateChanged, this, update_comp_ui);
         update_comp_ui();
         tabs->addTab(tab_comp, "Compression");
+#ifdef _WIN32
+        QWidget *tab_cm = new QWidget();
+        QVBoxLayout *layout_cm = new QVBoxLayout(tab_cm);
+        layout_cm->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+        layout_cm->setContentsMargins(15, 20, 15, 20);
+
+        QPushButton *btn_install_cm = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/install.svg")), " Install context menu", this);
+        QLabel *lbl_install = new QLabel("Adds cascading MAGE options to your Windows right-click menu, allowing you to instantly encrypt or decrypt files without launching the app first.", this);
+        lbl_install->setStyleSheet("color: #aaaaaa; font-size: 11px;");
+        lbl_install->setWordWrap(true);
+
+        QPushButton *btn_remove_cm = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/remove.svg")), " Remove context menu", this);
+        QLabel *lbl_remove = new QLabel("Removes MAGE options from your Windows right-click menu cleanly.", this);
+        lbl_remove->setStyleSheet("color: #aaaaaa; font-size: 11px;");
+        lbl_remove->setWordWrap(true);
+
+        layout_cm->addWidget(btn_install_cm, 0, Qt::AlignLeft);
+        layout_cm->addSpacing(4);
+        layout_cm->addWidget(lbl_install);
+        layout_cm->addSpacing(20);
+        layout_cm->addWidget(btn_remove_cm, 0, Qt::AlignLeft);
+        layout_cm->addSpacing(4);
+        layout_cm->addWidget(lbl_remove);
+        layout_cm->addStretch();
+        tabs->addTab(tab_cm, "Context menu");
+
+        connect(btn_install_cm, &QPushButton::clicked, this, [this]()
+                {
+            pk::os::cm::install();
+            pk::ui::outs::info(this, "Success", "Context menus installed successfully."); });
+        connect(btn_remove_cm, &QPushButton::clicked, this, [this]()
+                {
+            pk::os::cm::remove();
+            pk::ui::outs::info(this, "Success", "Context menus removed successfully."); });
+#endif
         main_layout->addWidget(tabs);
         QHBoxLayout *action_layout = new QHBoxLayout();
         action_layout->addStretch();
