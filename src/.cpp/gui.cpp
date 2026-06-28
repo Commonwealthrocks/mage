@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 24/06/2026
+// last updated: 28/06/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -97,6 +97,21 @@ namespace pk::ui
         pk::ui::outs::cd_mk_archive dialog(nullptr);
         dialog.exec();
         this->show();
+    }
+    // cm menu goes here, or well the args[] at least
+    void gui::handle_args(const QString &mode, const QString &path)
+    {
+        this->hide();
+        if (mode == "encrypt")
+        {
+            pk::ui::outs::cd_mk_archive dialog(this, path);
+            dialog.exec();
+        }
+        else if (mode == "decrypt")
+        {
+            pk::ui::outs::cd_decrypt_archive dialog(this, path);
+            dialog.exec();
+        }
     }
     void gui::on_decrypt_archive_clicked()
     {
