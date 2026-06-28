@@ -23,7 +23,6 @@ namespace pk::ui::worker
         const std::vector<std::string> &roots,
         const QString &out_path,
         const QString &password,
-        bool use_keyfile,
         const QString &keyfile_path,
         pk::crypto::cipher::algorithm algo,
         const pk::crypto::kdf::kdf_cfg &kdf_cfg,
@@ -36,7 +35,6 @@ namespace pk::ui::worker
         roots_f_rooted = roots;
         output_path = out_path.toUtf8().toStdString();
         this->password = password.toUtf8().toStdString();
-        use_keyfile_yeah = use_keyfile;
         this->keyfile_path = keyfile_path.toUtf8().toStdString();
         this->algo = algo;
         __kdf_cfg = kdf_cfg;
@@ -50,13 +48,11 @@ namespace pk::ui::worker
         const QString &in_path,
         const QString &out_dir,
         const QString &password,
-        bool use_keyfile,
         const QString &keyfile_path)
     {
         this->in_path = in_path.toUtf8().toStdString();
         output_dir = out_dir.toUtf8().toStdString();
         this->password = password.toUtf8().toStdString();
-        use_keyfile_yeah = use_keyfile;
         this->keyfile_path = keyfile_path.toUtf8().toStdString();
     }
     void crypto_worker::run()
@@ -73,11 +69,17 @@ namespace pk::ui::worker
                 }
             };
             pk::mem_::secure_string final_password;
-            if (use_keyfile_yeah)
+            if (!keyfile_path.empty())
             {
                 try
                 {
-                    final_password = pk::crypto::keyfile::read(keyfile_path);
+                    auto kf = pk::crypto::keyfile::read(keyfile_path);
+                    if (!password.empty()) {
+                        final_password = pk::mem_::secure_string(password.begin(), password.end());
+                        final_password.append(kf);
+                    } else {
+                        final_password = std::move(kf);
+                    }
                 }
                 catch (const std::exception &e)
                 {
