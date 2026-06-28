@@ -4,7 +4,7 @@
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
 cmake_minimum_required(VERSION 3.20)
-project(mage_core VERSION 0.1 LANGUAGES CXX)
+project(mage_core VERSION 0.2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
