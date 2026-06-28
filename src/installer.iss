@@ -1,15 +1,15 @@
 ; installer.iss
-; last updated: 19/06/2026
+; last updated: 28/06/2026
 
 [Setup]
 AppName=MAGE
-AppVersion=0.1a
-AppVerName=MAGE - Make actually good encryption v0.1a
+AppVersion=0.2a
+AppVerName=MAGE - Make actually good encryption v0.2a
 AppPublisher=Commonwealthrocks
 AppCopyright=Copyright (C) 2026 Commonwealthrocks
 DefaultDirName={autopf}\MAGE
 DisableDirPage=no
-OutputBaseFilename=setup_mage_0.1a_win64
+OutputBaseFilename=setup_mage_0.2a_win64
 Compression=lzma2/ultra64
 DefaultGroupName=MAGE
 SolidCompression=yes
