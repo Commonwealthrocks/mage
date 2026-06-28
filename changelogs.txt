@@ -1,5 +1,5 @@
 ## changelogs.txt
-## last updated: 24/06/2026
+## last updated: 28/06/2026
 ## scroll all the way down for latest logs from now on
 
 VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
@@ -35,3 +35,17 @@ VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
 - Added shortcuts and shortcuts dialog.
 - Added about dialog.
 - Removed Herobrine.
+
+VERSION 0.2a - 28/06/2026 [ STARTED ON; 27/06/2026 ]
+- Fixed certain tooltips not rendering in settings tab.
+- Fixed app failing to encrypt sometimes when compression algorithm set to "None".
+- Removed "None" from compression algorithm.
+- Replaced "None" in compression presets with "Store".
+- Raw levels for ZSTD and LZMA2 can go to level 0 now to apply no compression (store).
+- Added context menu tab in settings.
+- Context menus can be installed or removed.
+- Tabs in the settings tab are now scrollable.
+- You can now do a combination of password + keyfile for creating archives.
+- Added an option to clear keyfiles from selection (or with DEL).
+- Removed CTRL + SHIFT + K shortcut to differ entropy modes.
+- Removed Herobrine. Again.
