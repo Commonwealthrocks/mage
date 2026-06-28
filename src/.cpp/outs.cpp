@@ -512,11 +512,11 @@ namespace pk::ui::outs
         update_comp_ui();
         tabs->addTab(tab_comp, "Compression");
         main_layout->addWidget(tabs);
-        QGroupBox *group_pass = new QGroupBox("Archive password (CTRL + SHIFT + K to toggle)", this);
+        QGroupBox *group_pass = new QGroupBox("Archive authentication (password and / or keyfile)", this);
         QVBoxLayout *pass_layout = new QVBoxLayout(group_pass);
         password_v = new QLineEdit(this);
         password_v->setEchoMode(QLineEdit::Password);
-        password_v->setPlaceholderText("Enter password...");
+        password_v->setPlaceholderText("Enter password (optional if using keyfile)...");
         password_v->setContextMenuPolicy(Qt::NoContextMenu);
         QAction *warn_action = password_v->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/warn.svg")), QLineEdit::TrailingPosition);
         warn_action->setToolTip("CAPS lock is enabled, if you weren't aware.");
@@ -540,33 +540,23 @@ namespace pk::ui::outs
                 password_v->setEchoMode(QLineEdit::Password);
                 toggle_action->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")));
             } });
-        input_stack = new QStackedWidget(this);
-        input_stack->addWidget(password_v);
-        QWidget *keyfile_page = new QWidget();
-        QHBoxLayout *keyfile_layout = new QHBoxLayout(keyfile_page);
-        keyfile_layout->setContentsMargins(0, 0, 0, 0);
+        pass_layout->addWidget(password_v);
+        QHBoxLayout *keyfile_layout = new QHBoxLayout();
         keyfile_path_v = new QLineEdit(this);
-        keyfile_path_v->setPlaceholderText("Select a keyfile...");
+        keyfile_path_v->setPlaceholderText("Select a keyfile (optional if using password)...");
         keyfile_path_v->setReadOnly(true);
+        keyfile_path_v->setClearButtonEnabled(true);
         QPushButton *btn_browse_keyfile = new QPushButton("Browse", this);
-        QPushButton *btn_generate_keyfile = new QPushButton("Generate keyfile", this);
+        QPushButton *btn_generate_keyfile = new QPushButton("Generate", this);
+        QPushButton *btn_clear_keyfile = new QPushButton("Clear", this);
         keyfile_layout->addWidget(keyfile_path_v);
         keyfile_layout->addWidget(btn_browse_keyfile);
         keyfile_layout->addWidget(btn_generate_keyfile);
-        input_stack->addWidget(keyfile_page);
-        pass_layout->addWidget(input_stack);
+        keyfile_layout->addWidget(btn_clear_keyfile);
+        pass_layout->addLayout(keyfile_layout);
         main_layout->addWidget(group_pass);
-        QShortcut *shortcut_keyfile = new QShortcut(QKeySequence("Ctrl+Shift+K"), this);
-        connect(shortcut_keyfile, &QShortcut::activated, this, [this, group_pass]()
-                {
-            m_use_keyfile_mode = !m_use_keyfile_mode;
-            if (m_use_keyfile_mode) {
-                input_stack->setCurrentIndex(1);
-                group_pass->setTitle("Archive keyfile (CTRL + SHIFT + K to toggle)");
-            } else {
-                input_stack->setCurrentIndex(0);
-                group_pass->setTitle("Archive password (CTRL + SHIFT + K to toggle)");
-            } });
+        connect(btn_clear_keyfile, &QPushButton::clicked, this, [this]()
+                { keyfile_path_v->clear(); });
         connect(btn_browse_keyfile, &QPushButton::clicked, this, [this]()
                 {
             QString path = QFileDialog::getOpenFileName(this, "Select keyfile", "", "MAGE keyfiles (*.mgkx);;All files (*)");
@@ -697,7 +687,7 @@ namespace pk::ui::outs
             return;
         }
         if (!pk::ui::outs::r_u_a_valid_filename(output_name->text(), &err_msg))
-        {
+        { // putujmo Rahela!
             warning(this, "ERROR", err_msg);
             return;
         }
@@ -706,14 +696,9 @@ namespace pk::ui::outs
             warning(this, "ERROR", "No files selected.");
             return;
         }
-        if (!m_use_keyfile_mode && password_v->text().isEmpty())
+        if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
         {
-            warning(this, "ERROR", "Password is empty.");
-            return;
-        }
-        if (m_use_keyfile_mode && keyfile_path_v->text().isEmpty())
-        {
-            warning(this, "ERROR", "Keyfile is not selected.");
+            warning(this, "ERROR", "You must provide either a password or a keyfile.");
             return;
         }
         pk::crypto::kdf::kdf_cfg kdf_cfg{};
@@ -762,7 +747,6 @@ namespace pk::ui::outs
             roots,
             output_dir->text() + "/" + output_name->text(),
             password_v->text(),
-            m_use_keyfile_mode,
             keyfile_path_v->text(),
             algo,
             kdf_cfg,
@@ -848,25 +832,21 @@ namespace pk::ui::outs
                 password_v->setEchoMode(QLineEdit::Password);
                 toggle_action2->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")));
             } });
-        input_stack = new QStackedWidget(this);
-        input_stack->addWidget(password_v);
-        QWidget *keyfile_page = new QWidget();
-        QHBoxLayout *keyfile_layout = new QHBoxLayout(keyfile_page);
-        keyfile_layout->setContentsMargins(0, 0, 0, 0);
+        password_v->setPlaceholderText("Enter password (optional if using keyfile)...");
+        QHBoxLayout *keyfile_layout = new QHBoxLayout();
         keyfile_path_v = new QLineEdit(this);
-        keyfile_path_v->setPlaceholderText("Select a keyfile");
+        keyfile_path_v->setPlaceholderText("Select a keyfile (optional if using password)...");
         keyfile_path_v->setReadOnly(true);
+        keyfile_path_v->setClearButtonEnabled(true);
         QPushButton *btn_browse_keyfile = new QPushButton("Browse", this);
+        QPushButton *btn_clear_keyfile = new QPushButton("Clear", this);
         keyfile_layout->addWidget(keyfile_path_v);
         keyfile_layout->addWidget(btn_browse_keyfile);
-        input_stack->addWidget(keyfile_page);
-        QLabel *lbl_pass = new QLabel("Password / keyfile\n(CTRL + SHIFT + K to toggle):", this);
-        form->addRow(lbl_pass, input_stack);
-        QShortcut *shortcut_keyfile = new QShortcut(QKeySequence("Ctrl+Shift+K"), this);
-        connect(shortcut_keyfile, &QShortcut::activated, this, [this]()
-                {
-            m_use_keyfile_mode = !m_use_keyfile_mode;
-            input_stack->setCurrentIndex(m_use_keyfile_mode ? 1 : 0); });
+        keyfile_layout->addWidget(btn_clear_keyfile);
+        form->addRow("Password:", password_v);
+        form->addRow("Keyfile:", keyfile_layout);
+        connect(btn_clear_keyfile, &QPushButton::clicked, this, [this]()
+                { keyfile_path_v->clear(); });
         connect(btn_browse_keyfile, &QPushButton::clicked, this, [this]()
                 {
             QString path = QFileDialog::getOpenFileName(this, "Select keyfile", "", "MAGE keyfiles (*.mgkx) ;; All files (*)");
@@ -956,18 +936,13 @@ namespace pk::ui::outs
             warning(this, "ERROR", "Output directory does not exist: " + resolved_out);
             return;
         }
-        if (!m_use_keyfile_mode && password_v->text().isEmpty())
+        if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
         {
-            warning(this, "ERROR", "Password is empty.");
-            return;
-        }
-        if (m_use_keyfile_mode && keyfile_path_v->text().isEmpty())
-        {
-            warning(this, "ERROR", "Keyfile is not selected.");
+            warning(this, "ERROR", "You must provide either a password or a keyfile.");
             return;
         }
         worker::crypto_worker *worker = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
-        worker->ss_def_unpk_params(_output_path->text(), resolved_out, password_v->text(), m_use_keyfile_mode, keyfile_path_v->text());
+        worker->ss_def_unpk_params(_output_path->text(), resolved_out, password_v->text(), keyfile_path_v->text());
         progress_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
