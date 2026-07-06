@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 28/06/2026
+// last updated: 06/07/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -35,25 +35,34 @@ namespace pk::ui::outs
         QString what_err_msg() const { return current_err; }
     private slots:
         void on_progress(int percentage);
-        void on_progress_details(uint64_t processed, uint64_t total);
+        void on_pr_details(uint64_t processed, uint64_t total);
         void on_success();
         void on_error(const QString &msg);
         void on_update_stats();
+        void on_current_ac0(const QString &action);
+        void on_current_file(const QString &file);
 
     private:
         worker::crypto_worker *m2_worker;
         QProgressBar *progress___;
         QLabel *lbl_overall;
+        QLabel *lbl_file;
         QLabel *lbl_proc;
         QLabel *lbl_sped;
         QLabel *lbl_elapsed;
+        QLabel *lbl_eta;
+        QLabel *lbl_file_count;
         QTimer *timer;
         QElapsedTimer elapsed;
         uint64_t last_processed;
         uint64_t current_proc;
         uint64_t tot_bytes;
+        int current_pct;
+        bool indeterminate;
         bool _success;
         QString current_err;
+        QString current_ac0_text;
+        QString current_file_text;
     };
     class cd_keyfile : public QDialog
     {
