@@ -1,5 +1,5 @@
 // gui_worker.hpp
-// last updated: 28/06/2026
+// last updated: 06/07/2026
 #pragma once
 #include <QThread>
 #include <QString>
@@ -41,7 +41,9 @@ namespace pk::ui::worker
         void success();
         void error(const QString &message);
         void progress(int percentage);
-        void progress_details(uint64_t processed, uint64_t total);
+        void pr_details(uint64_t processed, uint64_t total);
+        void current_ac0(const QString &action);
+        void current_file(const QString &file);
 
     protected:
         void run() override;
