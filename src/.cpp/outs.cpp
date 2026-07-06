@@ -500,9 +500,9 @@ namespace pk::ui::outs
         file_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
         files_layout->addWidget(file_list);
         QHBoxLayout *file_btns = new QHBoxLayout();
-        QPushButton *btn_add_file = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add file(s)", this);
-        QPushButton *btn_add_dir = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add folder(s)", this);
-        QPushButton *btn_rem_sel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), " Remove selected", this);
+        QPushButton *btn_add_file = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add files", this);
+        QPushButton *btn_add_dir = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add folders", this);
+        QPushButton *btn_rem_sel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), " Remove", this);
         QPushButton *btn_clear = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm_all.svg")), " Clear all", this);
         file_btns->addWidget(btn_add_file);
         file_btns->addWidget(btn_add_dir);
@@ -511,6 +511,21 @@ namespace pk::ui::outs
         files_layout->addLayout(file_btns);
         main_layout->addWidget(group_files);
         QTabWidget *tabs = new QTabWidget(this);
+        QWidget *tab_gen = new QWidget();
+        QFormLayout *form_gen = new QFormLayout(tab_gen);
+        _include_hidden = new QCheckBox("Include hidden files / directories", this);
+        _include_hidden->setChecked(pk::cfg::settings::instance().include_hidden());
+        __cp_metadata = new QCheckBox("Copy properties (creation / modified dates, permissions)", this);
+        __cp_metadata->setChecked(pk::cfg::settings::instance().cp_metadata());
+        chunk_size_used = new QSpinBox(this);
+        chunk_size_used->setRange(1, 64);
+        chunk_size_used->setSuffix(" MBs");
+        chunk_size_used->setValue(pk::cfg::settings::instance().def_chunk_size());
+        chunk_size_used->setContextMenuPolicy(Qt::NoContextMenu);
+        form_gen->addRow(_include_hidden);
+        form_gen->addRow(__cp_metadata);
+        form_gen->addRow("Chunk size:", chunk_size_used);
+        tabs->addTab(tab_gen, "General options");
         QWidget *tab_enc = new QWidget();
         QFormLayout *form_enc = new QFormLayout(tab_enc);
         algo_combo = new QComboBox(this);
@@ -549,24 +564,9 @@ namespace pk::ui::outs
         s_mem_cost->setContextMenuPolicy(Qt::NoContextMenu);
         s_cores->setContextMenuPolicy(Qt::NoContextMenu);
         form_kdf->addRow("Argon2ID time cost:", s_tc);
-        form_kdf->addRow("Argon2ID mem_:", s_mem_cost);
+        form_kdf->addRow("Argon2ID memory cost:", s_mem_cost);
         form_kdf->addRow("Argon2ID parallelism:", s_cores);
         tabs->addTab(tab_kdf, "KDF");
-        QWidget *tab_gen = new QWidget();
-        QFormLayout *form_gen = new QFormLayout(tab_gen);
-        _include_hidden = new QCheckBox("Include hidden files / directories", this);
-        _include_hidden->setChecked(pk::cfg::settings::instance().include_hidden());
-        __cp_metadata = new QCheckBox("Copy properties (creation / modified dates, permissions)", this);
-        __cp_metadata->setChecked(pk::cfg::settings::instance().cp_metadata());
-        chunk_size_used = new QSpinBox(this);
-        chunk_size_used->setRange(1, 64);
-        chunk_size_used->setSuffix(" MBs");
-        chunk_size_used->setValue(pk::cfg::settings::instance().def_chunk_size());
-        chunk_size_used->setContextMenuPolicy(Qt::NoContextMenu);
-        form_gen->addRow(_include_hidden);
-        form_gen->addRow(__cp_metadata);
-        form_gen->addRow("Chunk size:", chunk_size_used);
-        tabs->addTab(tab_gen, "General options");
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
         cmp_algo_combo = new QComboBox(this);
@@ -1224,9 +1224,9 @@ namespace pk::ui::outs
         s_cores->setRange(1, 64);
         s_cores->setValue(pk::cfg::settings::instance().def_cores());
         s_cores->setContextMenuPolicy(Qt::NoContextMenu);
-        form_enc->addRow("Default Argon2id time cost:", s_tc);
-        form_enc->addRow("Default Argon2id memory cost:", s_mem_cost);
-        form_enc->addRow("Default Argon2id parallelism:", s_cores);
+        form_enc->addRow("Default Argon2ID time cost:", s_tc);
+        form_enc->addRow("Default Argon2ID memory cost:", s_mem_cost);
+        form_enc->addRow("Default Argon2ID parallelism:", s_cores);
         tabs->addTab(tab_enc, "Encryption and KDF");
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
@@ -1323,7 +1323,6 @@ namespace pk::ui::outs
         layout_cm->addWidget(lbl_remove);
         layout_cm->addStretch();
         tabs->addTab(tab_cm, "Context menu");
-
         connect(btn_install_cm, &QPushButton::clicked, this, [this]()
                 {
             pk::os::cm::install();
