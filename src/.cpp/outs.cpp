@@ -680,6 +680,7 @@ namespace pk::ui::outs
         QHBoxLayout *action_layout = new QHBoxLayout();
         action_layout->addStretch();
         QPushButton *btn_create = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), " Create archive", this);
+        btn_create->setDefault(true);
         QPushButton *btn_cancel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Cancel", this);
         action_layout->addWidget(btn_create);
         action_layout->addWidget(btn_cancel);
@@ -966,6 +967,7 @@ namespace pk::ui::outs
         QHBoxLayout *action_layout = new QHBoxLayout();
         action_layout->addStretch();
         QPushButton *btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), " Decrypt archive", this);
+        btn_decrypt->setDefault(true);
         QPushButton *btn_cancel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Cancel", this);
         action_layout->addWidget(btn_decrypt);
         action_layout->addWidget(btn_cancel);
