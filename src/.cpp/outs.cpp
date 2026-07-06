@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 28/06/2026
+// last updated: 06/07/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -188,37 +188,57 @@ namespace pk::ui::outs
         custom_msg_dialog dlg(title, message, true, parent);
         return dlg.exec() == QDialog::Accepted;
     }
-    progress_dialog::progress_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0)
+    progress_dialog::progress_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
     {
-        setWindowTitle(m2_worker->what_mode() == worker::crypto_worker::mode::pack ? "Creating archive..." : "Decrypting archive...");
-        setFixedSize(550, 285);
+        QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
+        setWindowTitle(base_title + " - 0%");
+        setFixedSize(550, 350);
         setWindowFlags(windowFlags() | Qt::Window);
         setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
         setModal(true);
         dont_burn_my_eyes(this);
         QVBoxLayout *layout = new QVBoxLayout(this);
-        layout->setSpacing(12);
+        layout->setSpacing(8);
+        layout->setContentsMargins(12, 12, 12, 12);
         QGroupBox *overall_group = new QGroupBox("Overall progress", this);
         QVBoxLayout *overall_layout = new QVBoxLayout(overall_group);
-        lbl_overall = new QLabel("Files: processing...", this);
+        overall_layout->setSpacing(4);
+        lbl_overall = new QLabel("Preparing...", this);
         lbl_overall->setStyleSheet("font-weight: bold; font-size: 10pt;");
         overall_layout->addWidget(lbl_overall);
+        lbl_file = new QLabel(" ", this);
+        lbl_file->setStyleSheet("font-size: 9pt; color: #aaaaaa;");
+        overall_layout->addWidget(lbl_file);
         progress___ = new QProgressBar(this);
-        progress___->setRange(0, 100);
-        progress___->setValue(0);
+        progress___->setRange(0, 0);
+        progress___->setTextVisible(true);
+        progress___->setFormat("Waiting...");
         overall_layout->addWidget(progress___);
         layout->addWidget(overall_group);
         QGroupBox *stats_group = new QGroupBox("Stats", this);
         QGridLayout *stats_layout = new QGridLayout(stats_group);
-        lbl_proc = new QLabel("Size: 0 B / 0 B", this);
-        lbl_sped = new QLabel("Speed: 0 MB/s", this);
-        lbl_elapsed = new QLabel("Elapsed: 00:00:00", this);
-        stats_layout->addWidget(new QLabel("Processed:", this), 0, 0);
-        stats_layout->addWidget(lbl_proc, 0, 1);
-        stats_layout->addWidget(new QLabel("Speed:", this), 1, 0);
-        stats_layout->addWidget(lbl_sped, 1, 1);
-        stats_layout->addWidget(new QLabel("Time elapsed:", this), 2, 0);
-        stats_layout->addWidget(lbl_elapsed, 2, 1);
+        stats_layout->setVerticalSpacing(4);
+        stats_layout->setHorizontalSpacing(16);
+        lbl_proc = new QLabel("-", this);
+        lbl_sped = new QLabel("-", this);
+        lbl_elapsed = new QLabel("00:00:00", this);
+        lbl_eta = new QLabel("-", this);
+        lbl_file_count = new QLabel("-", this);
+        int row = 0;
+        stats_layout->addWidget(new QLabel("Processed:", this), row, 0);
+        stats_layout->addWidget(lbl_proc, row, 1);
+        row++;
+        stats_layout->addWidget(new QLabel("Speed:", this), row, 0);
+        stats_layout->addWidget(lbl_sped, row, 1);
+        row++;
+        stats_layout->addWidget(new QLabel("Elapsed:", this), row, 0);
+        stats_layout->addWidget(lbl_elapsed, row, 1);
+        row++;
+        stats_layout->addWidget(new QLabel("ETA:", this), row, 0);
+        stats_layout->addWidget(lbl_eta, row, 1);
+        row++;
+        stats_layout->addWidget(new QLabel("Files:", this), row, 0);
+        stats_layout->addWidget(lbl_file_count, row, 1);
         layout->addWidget(stats_group);
         QHBoxLayout *btn_layout = new QHBoxLayout();
         btn_layout->addStretch();
@@ -229,47 +249,137 @@ namespace pk::ui::outs
         layout->addLayout(btn_layout);
         timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, &progress_dialog::on_update_stats);
-        timer->start(1000);
+        timer->start(500);
         elapsed.start();
+        // mk signals here
         connect(m2_worker, &worker::crypto_worker::success, this, &progress_dialog::on_success);
         connect(m2_worker, &worker::crypto_worker::error, this, &progress_dialog::on_error);
         connect(m2_worker, &worker::crypto_worker::progress, this, &progress_dialog::on_progress);
-        connect(m2_worker, &worker::crypto_worker::progress_details, this, &progress_dialog::on_progress_details);
+        connect(m2_worker, &worker::crypto_worker::pr_details, this, &progress_dialog::on_pr_details);
+        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &progress_dialog::on_current_ac0);
+        connect(m2_worker, &worker::crypto_worker::current_file, this, &progress_dialog::on_current_file);
         connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
         m2_worker->start();
     }
     void progress_dialog::on_progress(int percentage)
     {
+        current_pct = percentage;
+        if (indeterminate)
+        {
+            indeterminate = false;
+            progress___->setRange(0, 100);
+        }
         progress___->setValue(percentage);
+        progress___->setFormat(QString::number(percentage) + "%");
+        QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
+        setWindowTitle(base_title + " — " + QString::number(percentage) + "%");
     }
-    void progress_dialog::on_progress_details(uint64_t processed, uint64_t total)
+    void progress_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
         current_proc = processed;
         tot_bytes = total;
     }
+    void progress_dialog::on_current_ac0(const QString &action)
+    {
+        current_ac0_text = action;
+        lbl_overall->setText(action);
+
+        bool is_kdf = action.contains("Argon2id", Qt::CaseInsensitive) || action.contains("Deriving", Qt::CaseInsensitive);
+        if (is_kdf && !indeterminate)
+        {
+            indeterminate = true;
+            progress___->setRange(0, 0);
+            progress___->setFormat("Deriving key...");
+        }
+        else if (!is_kdf && indeterminate)
+        {
+            indeterminate = false;
+            progress___->setRange(0, 100);
+            progress___->setValue(current_pct);
+            progress___->setFormat(QString::number(current_pct) + "%");
+        }
+    }
+    void progress_dialog::on_current_file(const QString &file)
+    {
+        current_file_text = file;
+        QString display = file;
+        if (display.length() > 65)
+            display = "..." + display.right(62);
+        lbl_file->setText(display);
+    }
     void progress_dialog::on_update_stats()
     {
-        uint64_t bytes_this_sec = current_proc - last_processed;
-        last_processed = current_proc;
-        double speed_mb_s = (double)bytes_this_sec / (1024.0 * 1024.0);
-        lbl_sped->setText(QString("Speed: %1 MB/s").arg(speed_mb_s, 0, 'f', 2));
         auto format_size = [](uint64_t s) -> QString
         {
-            if (s > 1024 * 1024 * 1024)
-                return QString("%1 GBs").arg((double)s / (1024 * 1024 * 1024), 0, 'f', 2);
-            if (s > 1024 * 1024)
-                return QString("%1 MBs").arg((double)s / (1024 * 1024), 0, 'f', 2);
-            if (s > 1024)
-                return QString("%1 KBs").arg((double)s / 1024, 0, 'f', 2);
-            return QString("%1 Bs").arg(s);
+            if (s >= (uint64_t)1024 * 1024 * 1024)
+                return QString("%1 GB").arg((double)s / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
+            if (s >= 1024 * 1024)
+                return QString("%1 MB").arg((double)s / (1024.0 * 1024.0), 0, 'f', 2);
+            if (s >= 1024)
+                return QString("%1 KB").arg((double)s / 1024.0, 0, 'f', 2);
+            return QString("%1 B").arg(s);
         };
-        lbl_proc->setText(QString("Size: %1 / %2").arg(format_size(current_proc)).arg(format_size(tot_bytes)));
-
-        qint64 secs = elapsed.elapsed() / 1000;
+        uint64_t bytes_delta = current_proc - last_processed;
+        last_processed = current_proc;
+        double speed_bytes_s = (double)bytes_delta * 2.0; // 500ms, double then
+        if (speed_bytes_s >= 1024.0 * 1024.0)
+            lbl_sped->setText(QString("%1 MB/s").arg(speed_bytes_s / (1024.0 * 1024.0), 0, 'f', 2));
+        else if (speed_bytes_s >= 1024.0)
+            lbl_sped->setText(QString("%1 KB/s").arg(speed_bytes_s / 1024.0, 0, 'f', 1));
+        else if (current_proc > 0)
+            lbl_sped->setText(QString("%1 B/s").arg((uint64_t)speed_bytes_s));
+        else
+            lbl_sped->setText("-");
+        if (tot_bytes > 0)
+            lbl_proc->setText(format_size(current_proc) + " / " + format_size(tot_bytes));
+        else if (current_proc > 0)
+            lbl_proc->setText(format_size(current_proc));
+        else
+            lbl_proc->setText("—");
+        qint64 total_ms = elapsed.elapsed();
+        qint64 secs = total_ms / 1000;
         int h = secs / 3600;
         int m = (secs % 3600) / 60;
         int s = secs % 60;
-        lbl_elapsed->setText(QString("Elapsed: %1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0')));
+        lbl_elapsed->setText(QString("%1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0')));
+        // eta; tho calculating these on any software is practically impossible on a hardware level
+        // it's better than nothin' really
+        if (current_pct > 0 && current_pct < 100 && tot_bytes > 0 && current_proc > 0)
+        {
+            double fraction = (double)current_proc / (double)tot_bytes;
+            if (fraction > 0.001)
+            {
+                double est_total_ms = (double)total_ms / fraction;
+                double remaining_ms = est_total_ms - (double)total_ms;
+                qint64 rem_secs = (qint64)(remaining_ms / 1000.0);
+                if (rem_secs < 0)
+                    rem_secs = 0;
+                int eh = rem_secs / 3600;
+                int em = (rem_secs % 3600) / 60;
+                int es = rem_secs % 60;
+                lbl_eta->setText(QString("%1:%2:%3").arg(eh, 2, 10, QChar('0')).arg(em, 2, 10, QChar('0')).arg(es, 2, 10, QChar('0')));
+            }
+            else
+            {
+                lbl_eta->setText("Calculating...");
+            }
+        }
+        else if (current_pct >= 100)
+        {
+            lbl_eta->setText("Quick, wasn't it?");
+        }
+        else
+        {
+            lbl_eta->setText("-");
+        }
+        if (!current_file_text.isEmpty() && tot_bytes > 0)
+        {
+            lbl_file_count->setText(QString("%1% complete").arg(current_pct));
+        }
+        else
+        {
+            lbl_file_count->setText("-");
+        }
     }
     void progress_dialog::on_success()
     {
