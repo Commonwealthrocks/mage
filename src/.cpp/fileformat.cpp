@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 06/07/2026
+// last updated: 07/07/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -10,6 +10,9 @@
 #include "../.hpp/path_handler.hpp"
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <utime.h>
+#include <sys/stat.h>
 #endif
 namespace pk::crypto::format
 {
@@ -443,6 +446,24 @@ namespace pk::crypto::format
                     safe_attrs = FILE_ATTRIBUTE_NORMAL;
                 }
                 SetFileAttributesW(wpath.c_str(), safe_attrs);
+            }
+#else
+            // random guy on an old ass forum said this shit works,
+            // he better not be lyin'
+            if (has_meta)
+            {
+                auto ft2unix = [](uint64_t ft) -> time_t
+                {
+                    return static_cast<time_t>((ft - 116444736000000000ULL) / 10000000ULL);
+                };
+                struct utimbuf new_times;
+                new_times.actime = ft2unix(atime);
+                new_times.modtime = ft2unix(mtime);
+                utime(target_path.string().c_str(), &new_times);
+                if ((attrs & 1) || (attrs > 0xFF && !(attrs & 0222)))
+                {
+                    chmod(target_path.string().c_str(), 0444);
+                }
             }
 #endif
         }
