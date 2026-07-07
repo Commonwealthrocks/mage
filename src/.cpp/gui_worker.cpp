@@ -1,6 +1,5 @@
 // gui_worker.cpp
-// last updated: 06/07/2026
-// haha 67 guys get it?
+// last updated: 07/07/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -112,22 +111,6 @@ namespace pk::ui::worker
                 std::filesystem::path archive_base_name = std::filesystem::path(output_path).stem();
                 std::error_code ec_out;
                 auto abs_out = std::filesystem::weakly_canonical(output_path, ec_out);
-                auto is_already_encrypted = [](const std::filesystem::path &path, uint64_t fsize) -> bool
-                {
-                    auto ext = path.extension().string();
-                    for (auto &c : ext)
-                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-                    if (ext == ".mage")
-                        return true;
-                    if (fsize < 4)
-                        return false;
-                    std::ifstream in(path, std::ios::binary);
-                    if (!in)
-                        return false;
-                    char magic[4] = {0};
-                    in.read(magic, 4);
-                    return (in.gcount() == 4 && std::memcmp(magic, pk::crypto::format::MAGIC_BYTES, 4) == 0);
-                };
                 for (const auto &root_str : roots_f_rooted)
                 {
                     std::filesystem::path root_path = root_str;
@@ -186,13 +169,8 @@ namespace pk::ui::worker
 #else
                             ae.file_size = is_dir ? 0 : dir_entry.file_size();
 #endif
-                            if (!is_dir && is_already_encrypted(dir_entry.path(), ae.file_size))
-                            {
-                                throw std::runtime_error("cannot encrypt an already encrypted MAGE file -> " + dir_entry.path().filename().string());
-                            }
-
-                            // std::filesystem::relative is VERY slow on Windows.
-                            // We know dir_entry is inside root_path, so just strip the prefix.
+                            // std::filesystem::relative is VERY slow on windows
+                            // we know dir_entry is inside root_path, so just strip the prefix
                             std::string rel_str = dir_entry.path().generic_string();
                             std::string root_str_gen = root_path.generic_string();
                             if (rel_str.length() > root_str_gen.length() && rel_str.compare(0, root_str_gen.length(), root_str_gen) == 0)
@@ -226,10 +204,7 @@ namespace pk::ui::worker
                     else
                     {
                         uint64_t fsize = std::filesystem::file_size(root_path);
-                        if (is_already_encrypted(root_path, fsize))
-                        {
-                            throw std::runtime_error("cannot encrypt an already encrypted MAGE file -> " + root_path.filename().string());
-                        }
+
                         pk::crypto::format::archive_entry ae;
                         ae.source_path = root_path;
                         ae.relative_path = (archive_base_name / root_path.filename()).generic_string();
