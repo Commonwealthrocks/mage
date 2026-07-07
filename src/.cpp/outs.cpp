@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 06/07/2026
+// last updated: 07/07/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -1305,17 +1305,14 @@ namespace pk::ui::outs
         QVBoxLayout *layout_cm = new QVBoxLayout(tab_cm);
         layout_cm->setAlignment(Qt::AlignTop | Qt::AlignLeft);
         layout_cm->setContentsMargins(15, 20, 15, 20);
-
         QPushButton *btn_install_cm = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/install.svg")), " Install context menu", this);
         QLabel *lbl_install = new QLabel("Adds cascading MAGE options to your Windows right-click menu, allowing you to instantly encrypt or decrypt files without launching the app first.", this);
         lbl_install->setStyleSheet("color: #aaaaaa; font-size: 11px;");
         lbl_install->setWordWrap(true);
-
         QPushButton *btn_remove_cm = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/remove.svg")), " Remove context menu", this);
         QLabel *lbl_remove = new QLabel("Removes MAGE options from your Windows right-click menu cleanly.", this);
         lbl_remove->setStyleSheet("color: #aaaaaa; font-size: 11px;");
         lbl_remove->setWordWrap(true);
-
         layout_cm->addWidget(btn_install_cm, 0, Qt::AlignLeft);
         layout_cm->addSpacing(4);
         layout_cm->addWidget(lbl_install);
@@ -1400,7 +1397,7 @@ namespace pk::ui::outs
         line1->setFrameShadow(QFrame::Sunken);
         layout->addWidget(line1);
         QLabel *lbl_info = new QLabel(
-            "Version: v0.2a\n"
+            "Version: v0.3a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
             "Made by: Common, just Common.\n"
             "Audited by: no one. ",
