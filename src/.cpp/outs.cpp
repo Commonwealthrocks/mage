@@ -1300,11 +1300,11 @@ namespace pk::ui::outs
         connect(cmp_use_raw, &QCheckBox::checkStateChanged, this, update_comp_ui);
         update_comp_ui();
         tabs->addTab(tab_comp, "Compression");
-#ifdef _WIN32
         QWidget *tab_cm = new QWidget();
         QVBoxLayout *layout_cm = new QVBoxLayout(tab_cm);
         layout_cm->setAlignment(Qt::AlignTop | Qt::AlignLeft);
         layout_cm->setContentsMargins(15, 20, 15, 20);
+#ifdef _WIN32
         QPushButton *btn_install_cm = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/install.svg")), " Install context menu", this);
         QLabel *lbl_install = new QLabel("Adds cascading MAGE options to your Windows right-click menu, allowing you to instantly encrypt or decrypt files without launching the app first.", this);
         lbl_install->setStyleSheet("color: #aaaaaa; font-size: 11px;");
@@ -1330,6 +1330,13 @@ namespace pk::ui::outs
                 {
             pk::os::cm::remove();
             pk::ui::outs::info(this, "Success", "Context menus removed successfully."); });
+#else
+        QLabel *lbl_unsupported = new QLabel("<b>[ OS NOT SUPPORTED! ]</b><br><br>Context menu integration is currently only supported on Windows.", this);
+        lbl_unsupported->setStyleSheet("color: #aaaaaa; font-size: 12px;");
+        lbl_unsupported->setWordWrap(true);
+        layout_cm->addWidget(lbl_unsupported);
+        layout_cm->addStretch();
+        tabs->addTab(tab_cm, "Context menu");
 #endif
         main_layout->addWidget(tabs);
         QHBoxLayout *action_layout = new QHBoxLayout();
