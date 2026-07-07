@@ -1,10 +1,13 @@
 // sfx.cpp
-// last updated: 24/06/2026
+// last updated: 07/07/2026
 #include "../.hpp/sfx.hpp"
 #include "../.hpp/settings.hpp"
 #include <QDir>
 #include <QCoreApplication>
 #include <QString>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QFileInfo>
 #include <string>
 #include <cctype>
 #ifdef _WIN32
@@ -22,7 +25,7 @@ namespace pk::ui::sfx
             return "C:\\Windows\\Media";
         return QDir(QString::fromLocal8Bit(windir)).absoluteFilePath("Media");
 #else
-        return "C:\\Windows\\Media";
+        return "";
 #endif
     }
 
@@ -37,24 +40,48 @@ namespace pk::ui::sfx
         int vol = pk::cfg::settings::instance().sfx_volume();
         if (vol <= 0)
             return;
+
+        if (!QFileInfo::exists(path))
+            return;
 #ifdef _WIN32
+        if (waveOutGetNumDevs() == 0)
+            return;
         DWORD dwVol = (DWORD)((vol / 100.0) * 0xFFFF);
         waveOutSetVolume(NULL, (dwVol & 0xFFFF) | (dwVol << 16));
         QString nativePath = QDir::toNativeSeparators(path);
         PlaySoundW((LPCWSTR)nativePath.utf16(), NULL, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+#else
+        if (QStandardPaths::findExecutable("paplay").isEmpty())
+            return;
+        int linux_vol = (vol * 65536) / 100;
+        QStringList args;
+        args << "--volume=" + QString::number(linux_vol) << path;
+        QProcess::startDetached("paplay", args);
 #endif
     }
     void play_success()
     {
+#ifdef _WIN32
         play_sound(QDir(get_media_dir()).absoluteFilePath("notify.wav"));
+#else
+        play_sound("/usr/share/sounds/freedesktop/stereo/complete.oga");
+#endif
     }
     void play_error()
     {
+#ifdef _WIN32
         play_sound(QDir(get_media_dir()).absoluteFilePath("Windows Critical Stop.wav"));
+#else
+        play_sound("/usr/share/sounds/freedesktop/stereo/dialog-error.oga");
+#endif
     }
     void play_info()
     {
+#ifdef _WIN32
         play_sound(QDir(get_media_dir()).absoluteFilePath("Speech On.wav"));
+#else
+        play_sound("/usr/share/sounds/freedesktop/stereo/dialog-information.oga");
+#endif
     }
     void play_by_name(const std::string &name)
     {
