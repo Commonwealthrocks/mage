@@ -12,6 +12,8 @@
 #include <fstream>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/stat.h>
 #endif
 namespace pk::ui::worker
 {
@@ -129,6 +131,12 @@ namespace pk::ui::worker
                             continue; // skipp
                         }
                     }
+#else
+                    if (!_include_hidden)
+                    {
+                        if (root_path.filename().string().front() == '.')
+                            continue;
+                    }
 #endif
                     if (std::filesystem::is_directory(root_path))
                     {
@@ -142,6 +150,14 @@ namespace pk::ui::worker
                             WIN32_FILE_ATTRIBUTE_DATA winfo;
                             bool have_winfo = GetFileAttributesExW(dir_entry.path().wstring().c_str(), GetFileExInfoStandard, &winfo) != 0;
                             if (!_include_hidden && have_winfo && (winfo.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
+                            {
+                                if (dir_entry.is_directory())
+                                    it.disable_recursion_pending();
+                                ++it;
+                                continue;
+                            }
+#else
+                            if (!_include_hidden && dir_entry.path().filename().string().front() == '.')
                             {
                                 if (dir_entry.is_directory())
                                     it.disable_recursion_pending();
@@ -195,6 +211,19 @@ namespace pk::ui::worker
                                     ae.mtime = ((uint64_t)winfo.ftLastWriteTime.dwHighDateTime << 32) | winfo.ftLastWriteTime.dwLowDateTime;
                                     ae.attrs = winfo.dwFileAttributes;
                                 }
+#else
+                                struct stat st;
+                                if (stat(dir_entry.path().string().c_str(), &st) == 0)
+                                {
+                                    auto unix2ft = [](time_t t) -> uint64_t
+                                    {
+                                        return (static_cast<uint64_t>(t) * 10000000ULL) + 116444736000000000ULL;
+                                    };
+                                    ae.ctime = unix2ft(st.st_ctime);
+                                    ae.atime = unix2ft(st.st_atime);
+                                    ae.mtime = unix2ft(st.st_mtime);
+                                    ae.attrs = st.st_mode;
+                                }
 #endif
                             }
                             entries.push_back(std::move(ae));
@@ -220,6 +249,19 @@ namespace pk::ui::worker
                                 ae.atime = ((uint64_t)info.ftLastAccessTime.dwHighDateTime << 32) | info.ftLastAccessTime.dwLowDateTime;
                                 ae.mtime = ((uint64_t)info.ftLastWriteTime.dwHighDateTime << 32) | info.ftLastWriteTime.dwLowDateTime;
                                 ae.attrs = info.dwFileAttributes;
+                            }
+#else
+                            struct stat st;
+                            if (stat(ae.source_path.string().c_str(), &st) == 0)
+                            {
+                                auto unix2ft = [](time_t t) -> uint64_t
+                                {
+                                    return (static_cast<uint64_t>(t) * 10000000ULL) + 116444736000000000ULL;
+                                };
+                                ae.ctime = unix2ft(st.st_ctime);
+                                ae.atime = unix2ft(st.st_atime);
+                                ae.mtime = unix2ft(st.st_mtime);
+                                ae.attrs = st.st_mode;
                             }
 #endif
                         }
