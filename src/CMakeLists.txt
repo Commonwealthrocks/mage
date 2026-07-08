@@ -1,10 +1,10 @@
 ## CMakeLists.txt
-## last updated: 28/06/2026
+## last updated: 08/07/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
 cmake_minimum_required(VERSION 3.20)
-project(mage_core VERSION 0.2 LANGUAGES CXX)
+project(mage_core VERSION 0.3 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -15,10 +15,9 @@ if(MAGE_STATIC_BUILD)
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     set(BUILD_SHARED_LIBS OFF)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
-    
-    find_package(Qt6 COMPONENTS Core Gui Widgets Svg Concurrent REQUIRED)
+    find_package(Qt6 COMPONENTS Core Gui Widgets Svg Concurrent Network REQUIRED)
 else()
-    find_package(Qt6 COMPONENTS Core Gui Widgets Svg Concurrent REQUIRED)
+    find_package(Qt6 COMPONENTS Core Gui Widgets Svg Concurrent Network REQUIRED)
     set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
     set(BUILD_SHARED_LIBS OFF)
     set(OPENSSL_USE_STATIC_LIBS TRUE)
@@ -83,6 +82,8 @@ add_executable(mage WIN32
     .cpp/shortcuts.cpp
     .hpp/shortcuts.hpp
     .cpp/cm.cpp
+    .cpp/mage_ipc.cpp
+    .hpp/mage_ipc.hpp
 )
 target_link_libraries(mage
     PRIVATE
@@ -92,6 +93,7 @@ target_link_libraries(mage
     Qt6::Widgets
     Qt6::Svg
     Qt6::Concurrent
+    Qt6::Network
     dwmapi
     winmm
 )
@@ -108,7 +110,6 @@ else()
     message(STATUS "dynamic (df)")
     get_target_property(QT_QMAKE_LOCATION Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIR "${QT_QMAKE_LOCATION}" DIRECTORY)
-    
     add_custom_command(TARGET mage POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E env 
             "PATH=${QT_BIN_DIR};$ENV{PATH}"
