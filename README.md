@@ -17,6 +17,7 @@ Archive creation and encryption software made in **C++** with `Qt6`, `NaCl`, `Op
 - Password + keyfiles as the same entropy source.
 - Secure memory handling of passwords and **Argon2ID** hashes.
 - Human readable errors. Surprising!
+- Bulk file decryption! Provided the entropy source matches across all files...
 - Much more for you to see in the app.
 
 ## **General tips**
@@ -41,6 +42,13 @@ And from there you can either make a dynamic or static build, for now, static bu
 ```bash
 mkdir build && cd build && cmake -G "Ninja" .. && ninja && strip bin/mage.exe
 ```
+
+## **About Linux / UNIX**
+**MAGE** and my entire knowledge consists of `Win32API` docs, however I have accounted for a good majority of the **Linux** kernel quirks and audio drivers which made me severely suicidal.
+
+Do keep in mind, **Linux** was never tested by me, so it might work or not; who knows.
+
+That being said, **MAGE** is not officially compiled for **Linux** yet; because it depends a lot on each setup, so for the time being I suggest getting the portable `.zip` version of the app and using emulation software like `Wine` or `Bottles`.
 
 ## **License**
 **MAGE** is provided under the **MIT** license for any and all usage! View the license [here](license.txt).
