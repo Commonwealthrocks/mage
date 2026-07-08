@@ -901,6 +901,8 @@ namespace pk::ui::outs
     }
     void cd_decrypt_archive::add_path(const QString &path)
     {
+        if (QFileInfo(path).isDir())
+            return;
         QString canonical = QFileInfo(path).canonicalFilePath();
         if (canonical.isEmpty())
             canonical = QDir::cleanPath(path);
@@ -920,9 +922,9 @@ namespace pk::ui::outs
         archive_list = new QListWidget(this);
         archive_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
         QHBoxLayout *list_btn_layout = new QHBoxLayout();
-        QPushButton *btn_add = new QPushButton("Add files", this);
-        QPushButton *btn_remove = new QPushButton("Remove selected", this);
-        QPushButton *btn_clear = new QPushButton("Clear all", this);
+        QPushButton *btn_add = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add files", this);
+        QPushButton *btn_remove = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), " Remove", this);
+        QPushButton *btn_clear = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm_all.svg")), " Clear all", this);
         list_btn_layout->addWidget(btn_add);
         list_btn_layout->addWidget(btn_remove);
         list_btn_layout->addWidget(btn_clear);
