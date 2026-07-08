@@ -101,7 +101,7 @@ namespace pk::ui
         this->hide();
         if (!m_mk_archive_dialog)
         {
-            m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(this);
+            m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(nullptr);
             m_mk_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
             connect(m_mk_archive_dialog, &QDialog::finished, this, [this]()
                     {
@@ -127,7 +127,7 @@ namespace pk::ui
             }
             else
             {
-                m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(this, path);
+                m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(nullptr, path);
                 m_mk_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
                 connect(m_mk_archive_dialog, &QDialog::finished, this, [this, quit_on_close]()
                         {
@@ -135,8 +135,7 @@ namespace pk::ui
                     if (quit_on_close)
                         qApp->quit();
                     else
-                        this->show(); 
-                });
+                        this->show(); });
                 m_mk_archive_dialog->show();
             }
         }
@@ -149,7 +148,7 @@ namespace pk::ui
             }
             else
             {
-                m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(this, path);
+                m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(nullptr, path);
                 m_decrypt_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
                 connect(m_decrypt_archive_dialog, &QDialog::finished, this, [this, quit_on_close]()
                         {
@@ -157,8 +156,7 @@ namespace pk::ui
                     if (quit_on_close)
                         qApp->quit();
                     else
-                        this->show();
-                });
+                        this->show(); });
                 m_decrypt_archive_dialog->show();
             }
         }
@@ -168,7 +166,7 @@ namespace pk::ui
         this->hide();
         if (!m_decrypt_archive_dialog)
         {
-            m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(this);
+            m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(nullptr); // show in taskbar
             m_decrypt_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
             connect(m_decrypt_archive_dialog, &QDialog::finished, this, [this]()
                     {
