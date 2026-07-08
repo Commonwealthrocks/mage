@@ -113,7 +113,7 @@ namespace pk::ui
         }
     }
     // cm menu goes here, or well the args[] at least
-    void gui::handle_args(const QString &mode, const QString &path)
+    void gui::handle_args(const QString &mode, const QString &path, bool quit_on_close)
     {
         this->hide();
         if (mode == "encrypt")
@@ -127,10 +127,14 @@ namespace pk::ui
             {
                 m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(this, path);
                 m_mk_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
-                connect(m_mk_archive_dialog, &QDialog::finished, this, [this]()
+                connect(m_mk_archive_dialog, &QDialog::finished, this, [this, quit_on_close]()
                         {
                     m_mk_archive_dialog = nullptr;
-                    this->show(); });
+                    if (quit_on_close)
+                        qApp->quit();
+                    else
+                        this->show(); 
+                });
                 m_mk_archive_dialog->show();
             }
         }
@@ -138,8 +142,13 @@ namespace pk::ui
         {
             pk::ui::outs::cd_decrypt_archive *dialog = new pk::ui::outs::cd_decrypt_archive(this, path);
             dialog->setAttribute(Qt::WA_DeleteOnClose);
-            connect(dialog, &QDialog::finished, this, [this]()
-                    { this->show(); });
+            connect(dialog, &QDialog::finished, this, [this, quit_on_close]()
+                    { 
+                if (quit_on_close)
+                    qApp->quit();
+                else
+                    this->show(); 
+            });
             dialog->show();
         }
     }
