@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 08/07/2026
+// last updated: 09/07/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -54,29 +54,22 @@ int main(int argc, char *argv[])
     app.setApplicationName("MAGE");
     app.setApplicationVersion("v0.3a"); // forgot to change ts, oops
     app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
-    // 1. Check if there's already a primary MAGE instance running.
-    //    Do this BEFORE starting our own server, otherwise we'd connect to ourselves.
     QStringList args = app.arguments();
     if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt"))
     {
         QString mode = (args[1] == "--encrypt" ? "encrypt" : "decrypt");
         if (pk::ipc::s_t_prim_instance(mode, args[2]))
         {
-            return 0; // forwarded to an existing instance, our job here is done
+            return 0;
         }
     }
-
-    // 2. No primary instance found — we are the primary. Start the IPC server now
-    //    so any instances launched immediately after us can find us.
     pk::ipc::ipc_server ipc_srv;
     ipc_srv.start();
-
     // init nacl
     if (sodium_init() < 0)
     {
         return 1;
     }
-
     try
     {
         pk::cfg::settings::instance().load();
@@ -88,7 +81,6 @@ int main(int argc, char *argv[])
     app.installEventFilter(new scroll_filter(&app));
     app.installEventFilter(new pk::ui::shortcuts::shortcut_filter(&app));
     pk::ui::sfx::preload();
-
     if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt"))
     {
         QString mode = (args[1] == "--encrypt" ? "encrypt" : "decrypt");
