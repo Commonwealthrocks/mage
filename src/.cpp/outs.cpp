@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 07/07/2026
+// last updated: 08/07/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -28,6 +28,7 @@
 #include <QPropertyAnimation>
 #include <QScreen>
 #include <QTimer>
+#include <QListWidget>
 #include <QPixmap>
 #include <QListView>
 #include <QTreeView>
@@ -469,9 +470,23 @@ namespace pk::ui::outs
         dont_burn_my_eyes(this);
         if (!initial_path.isEmpty())
         {
-            file_list->addItem(initial_path);
-            update_default_path(initial_path);
+            add_path(initial_path);
         }
+    }
+    void cd_mk_archive::add_path(const QString &path)
+    {
+        // normalize to canonical form so C:\foo, C:/foo, and C:/FOO (on windows)
+        // all resolve to the same thing, preventing duplicates
+        QString canonical = QFileInfo(path).canonicalFilePath();
+        if (canonical.isEmpty())
+            canonical = QDir::cleanPath(path);
+        for (int i = 0; i < file_list->count(); ++i)
+        {
+            if (file_list->item(i)->text() == canonical)
+                return;
+        }
+        file_list->addItem(canonical);
+        update_default_path(canonical);
     }
     void cd_mk_archive::setup_ui()
     {
@@ -704,11 +719,8 @@ namespace pk::ui::outs
         for (const QUrl &url : event->mimeData()->urls())
         {
             QString path = url.toLocalFile();
-            if (!path.isEmpty() && file_list->findItems(path, Qt::MatchExactly).isEmpty())
-            {
-                file_list->addItem(path);
-                update_default_path(path);
-            }
+            if (!path.isEmpty())
+                add_path(path);
         }
     }
     void cd_mk_archive::on_browse_output()
@@ -721,13 +733,7 @@ namespace pk::ui::outs
     {
         QStringList files = QFileDialog::getOpenFileNames(this, "Select files");
         for (const QString &f : files)
-        {
-            if (file_list->findItems(f, Qt::MatchExactly).isEmpty())
-            {
-                file_list->addItem(f);
-                update_default_path(f);
-            }
-        }
+            add_path(f);
     }
     void cd_mk_archive::on_add_folders()
     {
@@ -747,11 +753,8 @@ namespace pk::ui::outs
             QStringList dirs = dialog.selectedFiles();
             for (const QString &d : dirs)
             {
-                if (!d.isEmpty() && file_list->findItems(d, Qt::MatchExactly).isEmpty())
-                {
-                    file_list->addItem(d);
-                    update_default_path(d);
-                }
+                if (!d.isEmpty())
+                    add_path(d);
             }
         }
     }
@@ -889,27 +892,45 @@ namespace pk::ui::outs
     {
         setWindowTitle("Decrypt archive");
         setWindowFlags(windowFlags() | Qt::Window);
-        setFixedSize(400, 200);
+        setFixedSize(500, 420);
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
         if (!initial_path.isEmpty())
+            add_path(initial_path);
+    }
+    void cd_decrypt_archive::add_path(const QString &path)
+    {
+        QString canonical = QFileInfo(path).canonicalFilePath();
+        if (canonical.isEmpty())
+            canonical = QDir::cleanPath(path);
+        for (int i = 0; i < archive_list->count(); ++i)
         {
-            _output_path->setText(initial_path);
-            update_default_path(initial_path);
+            if (archive_list->item(i)->text() == canonical)
+                return;
         }
+        archive_list->addItem(canonical);
+        update_default_path(canonical);
     }
     void cd_decrypt_archive::setup_ui()
     {
         QVBoxLayout *main_layout = new QVBoxLayout(this);
+        QGroupBox *group_archives = new QGroupBox("Archives to decrypt", this);
+        QVBoxLayout *archives_layout = new QVBoxLayout(group_archives);
+        archive_list = new QListWidget(this);
+        archive_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        QHBoxLayout *list_btn_layout = new QHBoxLayout();
+        QPushButton *btn_add = new QPushButton("Add files", this);
+        QPushButton *btn_remove = new QPushButton("Remove selected", this);
+        QPushButton *btn_clear = new QPushButton("Clear all", this);
+        list_btn_layout->addWidget(btn_add);
+        list_btn_layout->addWidget(btn_remove);
+        list_btn_layout->addWidget(btn_clear);
+        list_btn_layout->addStretch();
+        archives_layout->addWidget(archive_list);
+        archives_layout->addLayout(list_btn_layout);
+        main_layout->addWidget(group_archives);
         QFormLayout *form = new QFormLayout();
-        QHBoxLayout *arch_layout = new QHBoxLayout();
-        _output_path = new QLineEdit(this);
-        _output_path->setContextMenuPolicy(Qt::NoContextMenu);
-        QPushButton *btn_browse_arch = new QPushButton("Browse", this);
-        arch_layout->addWidget(_output_path);
-        arch_layout->addWidget(btn_browse_arch);
-        form->addRow("Archive file:", arch_layout);
         QHBoxLayout *out_layout = new QHBoxLayout();
         output_dir_ = new QLineEdit(this);
         output_dir_->setText(pk::cfg::settings::instance().def_output_path());
@@ -966,13 +987,15 @@ namespace pk::ui::outs
         main_layout->addStretch();
         QHBoxLayout *action_layout = new QHBoxLayout();
         action_layout->addStretch();
-        QPushButton *btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), " Decrypt archive", this);
+        QPushButton *btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), " Decrypt archives", this);
         btn_decrypt->setDefault(true);
         QPushButton *btn_cancel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Cancel", this);
         action_layout->addWidget(btn_decrypt);
         action_layout->addWidget(btn_cancel);
         main_layout->addLayout(action_layout);
-        connect(btn_browse_arch, &QPushButton::clicked, this, &cd_decrypt_archive::on_browse_archive);
+        connect(btn_add, &QPushButton::clicked, this, &cd_decrypt_archive::on_add_files);
+        connect(btn_remove, &QPushButton::clicked, this, &cd_decrypt_archive::on_remove_files);
+        connect(btn_clear, &QPushButton::clicked, this, &cd_decrypt_archive::on_clear_all);
         connect(btn_browse_out, &QPushButton::clicked, this, &cd_decrypt_archive::on_browse_output);
         connect(btn_decrypt, &QPushButton::clicked, this, &cd_decrypt_archive::on_decrypt);
         connect(btn_cancel, &QPushButton::clicked, this, &cd_decrypt_archive::on_cancel);
@@ -988,29 +1011,32 @@ namespace pk::ui::outs
         {
             QString path = url.toLocalFile();
             if (!path.isEmpty())
-            {
-                _output_path->setText(path);
-                update_default_path(path);
-                break;
-            }
+                add_path(path);
         }
     }
     void cd_decrypt_archive::update_default_path(const QString &path)
     {
-        if (output_dir_->text() == ".")
+        QString current = output_dir_->text();
+        if (current.isEmpty() || current == ".")
         {
             QFileInfo fi(path);
             output_dir_->setText(fi.absolutePath());
         }
     }
-    void cd_decrypt_archive::on_browse_archive()
+    void cd_decrypt_archive::on_add_files()
     {
-        QString path = QFileDialog::getOpenFileName(this, "Select archive", "", "All files (*.*)");
-        if (!path.isEmpty())
-        {
-            _output_path->setText(path);
-            update_default_path(path);
-        }
+        QStringList paths = QFileDialog::getOpenFileNames(this, "Select archives", "", "All files (*.*)");
+        for (const QString &p : paths)
+            add_path(p);
+    }
+    void cd_decrypt_archive::on_remove_files()
+    {
+        for (QListWidgetItem *item : archive_list->selectedItems())
+            delete item;
+    }
+    void cd_decrypt_archive::on_clear_all()
+    {
+        archive_list->clear();
     }
     void cd_decrypt_archive::on_browse_output()
     {
@@ -1020,32 +1046,14 @@ namespace pk::ui::outs
     }
     void cd_decrypt_archive::on_decrypt()
     {
-        if (_output_path->text().isEmpty())
+        if (archive_list->count() == 0)
         {
-            warning(this, "ERROR", "Archive path is empty.");
+            warning(this, "ERROR", "Add at least one archive to decrypt.");
             return;
         }
         if (output_dir_->text().isEmpty())
         {
-            warning(this, "ERROR", "Extraction directory is empty.");
-            return;
-        }
-        QString resolved_out = output_dir_->text();
-        if (resolved_out == ".")
-        {
-            QFileInfo fi(_output_path->text());
-            resolved_out = fi.absolutePath();
-            output_dir_->setText(resolved_out);
-        }
-        QString err_msg;
-        if (!pk::ui::outs::valid_path_probable(resolved_out, &err_msg))
-        {
-            warning(this, "ERROR", err_msg);
-            return;
-        }
-        if (!QFileInfo::exists(resolved_out) || !QFileInfo(resolved_out).isDir())
-        {
-            warning(this, "ERROR", "Output directory does not exist: " + resolved_out);
+            warning(this, "ERROR", "Specify an output directory first.");
             return;
         }
         if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
@@ -1053,21 +1061,51 @@ namespace pk::ui::outs
             warning(this, "ERROR", "You must provide either a password or a keyfile.");
             return;
         }
-        worker::crypto_worker *worker = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
-        worker->ss_def_unpk_params(_output_path->text(), resolved_out, password_v->text(), keyfile_path_v->text());
-        progress_dialog pd(worker, this);
-        if (pd.exec() == QDialog::Accepted)
+        QString base_out = output_dir_->text();
+        if (!QFileInfo::exists(base_out) || !QFileInfo(base_out).isDir())
         {
-            info(this, "Success", "Archive successfully decrypted.");
-            accept();
+            warning(this, "ERROR", "Output directory does not exist: " + base_out);
+            return;
         }
-        else
+        QStringList succeeded;
+        QStringList failed_names;
+        QStringList failed_reasons;
+        for (int i = 0; i < archive_list->count(); ++i)
         {
-            if (!pd.what_err_msg().isEmpty())
+            QString archive_path = archive_list->item(i)->text();
+            QString base_name = QFileInfo(archive_path).completeBaseName();
+            worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
+            w->ss_def_unpk_params(archive_path, base_out, password_v->text(), keyfile_path_v->text());
+            progress_dialog pd(w, this);
+            if (pd.exec() == QDialog::Accepted)
             {
-                error(this, "Something went wrong!!!", pd.what_err_msg());
+                succeeded.append(base_name);
+            }
+            else
+            {
+                failed_names.append(base_name);
+                failed_reasons.append(pd.what_err_msg().isEmpty() ? "Unknown error." : pd.what_err_msg());
             }
         }
+        QString summary;
+        if (!succeeded.isEmpty())
+            summary += QString("%1 archive(s) decrypted successfully:\n  \u2022 ").arg(succeeded.size()) + succeeded.join("\n  \u2022 ");
+        if (!failed_names.isEmpty())
+        {
+            if (!summary.isEmpty())
+                summary += "\n\n";
+            summary += QString("%1 archive(s) failed:\n").arg(failed_names.size());
+            for (int i = 0; i < failed_names.size(); ++i)
+                summary += QString("  \u2022 %1: %2\n").arg(failed_names[i]).arg(failed_reasons[i]);
+        }
+        if (failed_names.isEmpty())
+            info(this, "Done", summary);
+        else if (succeeded.isEmpty())
+            error(this, "All failed", summary);
+        else
+            warning(this, "Partially done", summary);
+        if (!succeeded.isEmpty())
+            accept();
     }
     void cd_decrypt_archive::on_cancel()
     {
@@ -1236,7 +1274,7 @@ namespace pk::ui::outs
         cmp_algo_combo->addItem("ZSTD");
         cmp_algo_combo->addItem("LZMA2");
         cmp_algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cmp_algorithm());
-        form_comp->addRow("Default Algorithm:", cmp_algo_combo);
+        form_comp->addRow("Default algorithm:", cmp_algo_combo);
         cmp_preset_combo = new QComboBox(this);
         cmp_preset_combo->addItem("Store");
         cmp_preset_combo->addItem("Normal");
