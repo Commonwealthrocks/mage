@@ -1,5 +1,5 @@
 ## changelogs.txt
-## last updated: 28/06/2026
+## last updated: 09/07/2026
 ## scroll all the way down for latest logs from now on
 
 VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
@@ -49,3 +49,25 @@ VERSION 0.2a - 28/06/2026 [ STARTED ON; 27/06/2026 ]
 - Added an option to clear keyfiles from selection (or with DEL).
 - Removed CTRL + SHIFT + K shortcut to differ entropy modes.
 - Removed Herobrine. Again.
+
+VERSION 0.3a - 08/07/2026 [ STARTED ON; 03/07/2026 ]
+- Fixed UX / progress dialog not hanging on non-cryptographic actions.
+- Fixed text cutting off in archive creation dialog.
+- Fixed CTRL + Q / M4 / ESC not closing the app when app is opened respective dialog through
+  the context menu.
+- ENTER in the archive and decrypt dialogs preforms the respective operation.
+- Encrypted archives can now contain already encrypted MAGE files.
+- Added proper SFX handling to UNIX / Linux based systems.
+- Optimized read and write logic of archives.
+- Added UNIX metadata handling (Win32 <-> UNIX).
+- Added UNIX filetime handling (Win32 <-> UNIX).
+- Added MAGE IPC server for in-process communication.
+- Fixed selecting multiple files or folders open multiple instances of MAGE.
+- The context menu tab in settings is now unavailable on UNIX based systems or any
+  non-Windows based OS.
+- Fixed path not being normalized in archive creation dialog if file(s) or folder(s) were
+  added via the context menu.
+- Added ability to bulk decrypt archives.
+- Re-worked decrypt dialog.
+- Secured IPC pipeline to prevent leaking of information and denial of service attacks.
+- TmlqZSBtaSBkbyBuacSNZWch
