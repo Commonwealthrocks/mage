@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 28/06/2026
+// last updated: 08/07/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -16,6 +16,7 @@
 #include "../.hpp/stylesheet.hpp"
 #include "../.hpp/settings.hpp"
 #include "../.hpp/sfx.hpp"
+#include "../.hpp/mage_ipc.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #include <dwmapi.h>
@@ -23,13 +24,15 @@
 #endif
 namespace pk::ui
 {
-    gui::gui(QWidget *parent)
+    gui::gui(pk::ipc::ipc_server *ipc, QWidget *parent)
         : QMainWindow(parent)
     {
         setWindowTitle("MAGE - Make actually good encryption!"); // this title is cutoff; oh well
         setFixedSize(300, 300);
         setup_ui();
         dark_theme();
+        connect(ipc, &pk::ipc::ipc_server::req_crypto, this, [this](const QString &path)
+                { this->handle_args("encrypt", path); });
 #ifdef _WIN32
         BOOL dark = TRUE;
         DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 20, &dark, sizeof(dark));
@@ -94,9 +97,20 @@ namespace pk::ui
     void gui::on_create_archive_clicked()
     {
         this->hide();
-        pk::ui::outs::cd_mk_archive dialog(nullptr);
-        dialog.exec();
-        this->show();
+        if (!m_mk_archive_dialog)
+        {
+            m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(this);
+            m_mk_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(m_mk_archive_dialog, &QDialog::finished, this, [this]()
+                    {
+                m_mk_archive_dialog = nullptr;
+                this->show(); });
+            m_mk_archive_dialog->show();
+        }
+        else
+        {
+            m_mk_archive_dialog->activateWindow();
+        }
     }
     // cm menu goes here, or well the args[] at least
     void gui::handle_args(const QString &mode, const QString &path)
@@ -104,13 +118,29 @@ namespace pk::ui
         this->hide();
         if (mode == "encrypt")
         {
-            pk::ui::outs::cd_mk_archive dialog(this, path);
-            dialog.exec();
+            if (m_mk_archive_dialog)
+            {
+                m_mk_archive_dialog->add_path(path);
+                m_mk_archive_dialog->activateWindow();
+            }
+            else
+            {
+                m_mk_archive_dialog = new pk::ui::outs::cd_mk_archive(this, path);
+                m_mk_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+                connect(m_mk_archive_dialog, &QDialog::finished, this, [this]()
+                        {
+                    m_mk_archive_dialog = nullptr;
+                    this->show(); });
+                m_mk_archive_dialog->show();
+            }
         }
         else if (mode == "decrypt")
         {
-            pk::ui::outs::cd_decrypt_archive dialog(this, path);
-            dialog.exec();
+            pk::ui::outs::cd_decrypt_archive *dialog = new pk::ui::outs::cd_decrypt_archive(this, path);
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(dialog, &QDialog::finished, this, [this]()
+                    { this->show(); });
+            dialog->show();
         }
     }
     void gui::on_decrypt_archive_clicked()
