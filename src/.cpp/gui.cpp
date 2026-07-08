@@ -33,6 +33,8 @@ namespace pk::ui
         dark_theme();
         connect(ipc, &pk::ipc::ipc_server::rq_enc, this, [this](const QString &path)
                 { this->handle_args("encrypt", path); });
+        connect(ipc, &pk::ipc::ipc_server::rq_dec, this, [this](const QString &path)
+                { this->handle_args("decrypt", path); });
 #ifdef _WIN32
         BOOL dark = TRUE;
         DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 20, &dark, sizeof(dark));
@@ -140,24 +142,44 @@ namespace pk::ui
         }
         else if (mode == "decrypt")
         {
-            pk::ui::outs::cd_decrypt_archive *dialog = new pk::ui::outs::cd_decrypt_archive(this, path);
-            dialog->setAttribute(Qt::WA_DeleteOnClose);
-            connect(dialog, &QDialog::finished, this, [this, quit_on_close]()
-                    { 
-                if (quit_on_close)
-                    qApp->quit();
-                else
-                    this->show(); 
-            });
-            dialog->show();
+            if (m_decrypt_archive_dialog)
+            {
+                m_decrypt_archive_dialog->add_path(path);
+                m_decrypt_archive_dialog->activateWindow();
+            }
+            else
+            {
+                m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(this, path);
+                m_decrypt_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+                connect(m_decrypt_archive_dialog, &QDialog::finished, this, [this, quit_on_close]()
+                        {
+                    m_decrypt_archive_dialog = nullptr;
+                    if (quit_on_close)
+                        qApp->quit();
+                    else
+                        this->show();
+                });
+                m_decrypt_archive_dialog->show();
+            }
         }
     }
     void gui::on_decrypt_archive_clicked()
     {
         this->hide();
-        pk::ui::outs::cd_decrypt_archive dialog(nullptr);
-        dialog.exec();
-        this->show();
+        if (!m_decrypt_archive_dialog)
+        {
+            m_decrypt_archive_dialog = new pk::ui::outs::cd_decrypt_archive(this);
+            m_decrypt_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(m_decrypt_archive_dialog, &QDialog::finished, this, [this]()
+                    {
+                m_decrypt_archive_dialog = nullptr;
+                this->show(); });
+            m_decrypt_archive_dialog->show();
+        }
+        else
+        {
+            m_decrypt_archive_dialog->activateWindow();
+        }
     }
     void gui::on_settings_clicked()
     {
