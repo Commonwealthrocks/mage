@@ -10,6 +10,7 @@ namespace pk::ipc
 namespace pk::ui::outs
 {
     class cd_mk_archive;
+    class cd_decrypt_archive;
 }
 namespace pk::ui
 {
@@ -19,7 +20,7 @@ namespace pk::ui
     public:
         explicit gui(pk::ipc::ipc_server *ipc, QWidget *parent = nullptr);
         ~gui() override = default;
-        void handle_args(const QString &mode, const QString &path);
+        void handle_args(const QString &mode, const QString &path, bool quit_on_close = false);
     private slots:
         void on_create_archive_clicked();
         void on_decrypt_archive_clicked();
@@ -33,6 +34,7 @@ namespace pk::ui
         QPushButton *btn_mk;
         QPushButton *btn_decrypt;
         pk::ui::outs::cd_mk_archive *m_mk_archive_dialog = nullptr;
+        pk::ui::outs::cd_decrypt_archive *m_decrypt_archive_dialog = nullptr;
     };
 }
 
