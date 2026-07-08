@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
     {
         QString mode = (args[1] == "--encrypt" ? "encrypt" : "decrypt");
         pk::ui::gui window(&ipc_srv);
-        window.handle_args(mode, args[2]);
+        window.handle_args(mode, args[2], true);
         return app.exec();
     }
     pk::ui::gui window(&ipc_srv);
