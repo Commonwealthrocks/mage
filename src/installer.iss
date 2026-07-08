@@ -1,15 +1,15 @@
 ; installer.iss
-; last updated: 28/06/2026
+; last updated: 09/07/2026
 
 [Setup]
 AppName=MAGE
-AppVersion=0.2a
-AppVerName=MAGE - Make actually good encryption v0.2a
+AppVersion=0.3a
+AppVerName=MAGE - Make actually good encryption v0.3a
 AppPublisher=Commonwealthrocks
 AppCopyright=Copyright (C) 2026 Commonwealthrocks
 DefaultDirName={autopf}\MAGE
 DisableDirPage=no
-OutputBaseFilename=setup_mage_0.2a_win64
+OutputBaseFilename=setup_mage_0.3a_win64
 Compression=lzma2/ultra64
 DefaultGroupName=MAGE
 SolidCompression=yes
@@ -29,3 +29,5 @@ Name: "{autodesktop}\MAGE"; Filename: "{app}\mage.exe"; IconFilename: "{app}\ass
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 Name: "startmenuicon"; Description: "Create a &Start Menu shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+
+; end
