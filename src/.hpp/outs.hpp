@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 06/07/2026
+// last updated: 08/07/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -87,6 +87,7 @@ namespace pk::ui::outs
     public:
         explicit cd_mk_archive(QWidget *parent = nullptr, const QString &initial_path = "");
         ~cd_mk_archive() override = default;
+        void add_path(const QString &path);
 
     protected:
         void dragEnterEvent(QDragEnterEvent *event) override;
@@ -126,12 +127,15 @@ namespace pk::ui::outs
     public:
         explicit cd_decrypt_archive(QWidget *parent = nullptr, const QString &initial_path = "");
         ~cd_decrypt_archive() override = default;
+        void add_path(const QString &path);
 
     protected:
         void dragEnterEvent(QDragEnterEvent *event) override;
         void dropEvent(QDropEvent *event) override;
     private slots:
-        void on_browse_archive();
+        void on_add_files();
+        void on_remove_files();
+        void on_clear_all();
         void on_browse_output();
         void on_decrypt();
         void on_cancel();
@@ -139,7 +143,7 @@ namespace pk::ui::outs
     private:
         void setup_ui();
         void update_default_path(const QString &path);
-        QLineEdit *_output_path;
+        QListWidget *archive_list;
         QLineEdit *output_dir_;
         QLineEdit *password_v;
         QLineEdit *keyfile_path_v;
