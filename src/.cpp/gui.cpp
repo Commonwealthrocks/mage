@@ -31,7 +31,7 @@ namespace pk::ui
         setFixedSize(300, 300);
         setup_ui();
         dark_theme();
-        connect(ipc, &pk::ipc::ipc_server::req_crypto, this, [this](const QString &path)
+        connect(ipc, &pk::ipc::ipc_server::rq_enc, this, [this](const QString &path)
                 { this->handle_args("encrypt", path); });
 #ifdef _WIN32
         BOOL dark = TRUE;
