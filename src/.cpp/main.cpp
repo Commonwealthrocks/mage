@@ -52,6 +52,8 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("MAGE");
+    app.setOrganizationName("MAGE");
+    app.setOrganizationDomain("mage.local");
     app.setApplicationVersion("v0.3a"); // forgot to change ts, oops
     app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
     QStringList args = app.arguments();
