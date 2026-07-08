@@ -1,14 +1,23 @@
 // mage_ipc.cpp
-// last updated: 08/07/2026
+// last updated: 09/07/2026
 #include "../.hpp/mage_ipc.hpp"
 #include <QDataStream>
+#include <QCryptographicHash>
 namespace pk::ipc
 {
-    const QString IPC_SERVER_NAME = "MAGE_IPC";
+    static QString get_ipc_name()
+    {
+        QString user = qgetenv("USERNAME");
+        if (user.isEmpty())
+            user = qgetenv("USER");
+        if (user.isEmpty())
+            user = "unknown";
+        return "MAGE_IPC_" + QString(QCryptographicHash::hash(user.toUtf8(), QCryptographicHash::Sha512).toHex());
+    }
     bool s_t_prim_instance(const QString &mode, const QString &path)
     {
         QLocalSocket socket;
-        socket.connectToServer(IPC_SERVER_NAME);
+        socket.connectToServer(get_ipc_name());
         if (socket.waitForConnected(500))
         {
             QByteArray block;
@@ -32,13 +41,14 @@ namespace pk::ipc
         if (m_server->isListening())
         {
             m_server->close();
-            QLocalServer::removeServer(IPC_SERVER_NAME);
+            QLocalServer::removeServer(get_ipc_name());
         }
     }
     bool ipc_server::start()
     {
-        QLocalServer::removeServer(IPC_SERVER_NAME);
-        return m_server->listen(IPC_SERVER_NAME);
+        QString name = get_ipc_name();
+        QLocalServer::removeServer(name);
+        return m_server->listen(name);
     }
     void ipc_server::hn_connection()
     {
