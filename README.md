@@ -25,7 +25,7 @@ In **MAGE** there are a few features that are NOT documented in the app and only
 
 In **MAGE** the `Settings` tab and `Archive creation` tab all originally rely on the saved settings in `%appdata%\MAGE\mage.json`, however only in the general settings tab can you make changes and save them globally to the `JSON` file; when creating an archive the settings you change there are only for that session.
 
-If you are compiling **MAGE** yourself, especially with the dynamic build option, you can strip out certain baked in `Qt6` DLLs example ones for networking and TLS. Those are generally not needed to run **MAGE**.
+Certain files (especially `Qt6` deps) are not needed to run **MAGE**. Now which ones are those? I dunno really, figure.
 
 ## **Building**
 To compile **MAGE** yourself you need to make sure you are on a more modern **Windows** like **Windows 10** or **Windows 11** and have **MSYS2 UCRT64** installed to pull the following libraries needed for **MAGE**...
