@@ -1,5 +1,5 @@
 // secure_memory.cpp
-// last updated: 17/06/2026
+// last updated: 03/08/2026
 #include "../.hpp/secure_memory.hpp"
 #ifdef _WIN32
 #include <windows.h>
@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #endif
+#include "../.hpp/logger.hpp"
 namespace pk::mem_
 {
         bool secure_lock(void *ptr, std::size_t size)
@@ -22,9 +23,19 @@ namespace pk::mem_
                         SIZE_T new_max = max_ws + needed;
                         SetProcessWorkingSetSize(GetCurrentProcess(), new_min, new_max);
                 }
-                return VirtualLock(ptr, size) != 0;
+                bool success = VirtualLock(ptr, size) != 0;
+                if (!success)
+                {
+                        pk::core::logger::log("exception: VirtualLock failed; sensitive data may be paged to disk.");
+                }
+                return success;
 #else
-                return mlock(ptr, size) == 0;
+                bool success = mlock(ptr, size) == 0;
+                if (!success)
+                {
+                        pk::core::logger::log("exception: mlock failed; sensitive data may be paged to disk.");
+                }
+                return success;
 #endif
         }
         bool secure_unlock(void *ptr, std::size_t size)
