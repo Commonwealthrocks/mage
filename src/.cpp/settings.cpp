@@ -5,8 +5,10 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
+#include <QCryptographicHash>
 #include <algorithm>
 #include "../.hpp/__cipher.hpp"
+#include "../.hpp/argon2id_hashing.hpp"
 namespace pk::cfg
 {
     settings &settings::instance()
@@ -48,10 +50,37 @@ namespace pk::cfg
         QFile file(settings_path());
         if (!file.open(QIODevice::ReadOnly))
             return;
-        QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
-        if (!doc.isObject())
+        QJsonDocument root_doc = QJsonDocument::fromJson(file.readAll());
+        if (!root_doc.isObject())
             return;
-        QJsonObject obj = doc.object();
+        QJsonObject root_obj = root_doc.object();
+        if (!root_obj.contains("n") || !root_obj.contains("p"))
+            return;
+        QByteArray nonce = QByteArray::fromBase64(root_obj["n"].toString().toUtf8());
+        QByteArray payload = QByteArray::fromBase64(root_obj["p"].toString().toUtf8());
+        QByteArray key = QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
+        // though this hardcoded key is to only make sure casual tweaks in the raw
+        // json file don't work; i could make it make a key which is hardware specific
+        // for each device, but for now this'll do! or i use the user windows encryption api
+        // but most of you reading this probably don't have a password on your account, do you?S
+        auto cipher = pk::crypto::cipher::mk_cipher(pk::crypto::cipher::algorithm::xchacha20_poly1305);
+        cipher->init(reinterpret_cast<const uint8_t *>(key.data()), key.size());
+        QJsonObject obj;
+        try
+        {
+            pk::mem_::secure_vector pt = cipher->decrypt_chunk(
+                reinterpret_cast<const uint8_t *>(payload.data()), payload.size(),
+                nullptr, 0,
+                reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size());
+            QJsonDocument plain_doc = QJsonDocument::fromJson(QByteArray(reinterpret_cast<const char *>(pt.data()), pt.size()));
+            if (!plain_doc.isObject())
+                return;
+            obj = plain_doc.object();
+        }
+        catch (...)
+        {
+            return;
+        }
         if (obj.contains("def_output_path"))
         {
             def_output_path_v = obj["def_output_path"].toString();
@@ -120,10 +149,25 @@ namespace pk::cfg
         obj["def_cmp_lvl"] = def_cmp_raw;
         obj["ss_raw_cmp"] = __use_raw_cmp;
         QJsonDocument doc(obj);
+        QByteArray plain_json = doc.toJson(QJsonDocument::Compact);
+        auto nonce_res = pk::crypto::kdf::mk_salt(24);
+        if (!pk::crypto::kdf::ok(nonce_res.second))
+            return;
+        QByteArray key = QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
+        auto cipher = pk::crypto::cipher::mk_cipher(pk::crypto::cipher::algorithm::xchacha20_poly1305);
+        cipher->init(reinterpret_cast<const uint8_t *>(key.data()), key.size());
+        std::vector<uint8_t> ct = cipher->encrypt_chunk(
+            reinterpret_cast<const uint8_t *>(plain_json.data()), plain_json.size(),
+            nullptr, 0,
+            nonce_res.first.data(), nonce_res.first.size());
+        QJsonObject secure_obj;
+        secure_obj["n"] = QString(QByteArray(reinterpret_cast<const char *>(nonce_res.first.data()), nonce_res.first.size()).toBase64());
+        secure_obj["p"] = QString(QByteArray(reinterpret_cast<const char *>(ct.data()), ct.size()).toBase64());
+        QJsonDocument secure_doc(secure_obj);
         QFile file(settings_path());
         if (file.open(QIODevice::WriteOnly))
         {
-            file.write(doc.toJson());
+            file.write(secure_doc.toJson());
         }
     }
 }
