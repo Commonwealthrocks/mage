@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 08/07/2026
+// last updated: 03/08/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -273,7 +273,7 @@ namespace pk::ui::outs
         progress___->setValue(percentage);
         progress___->setFormat(QString::number(percentage) + "%");
         QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
-        setWindowTitle(base_title + " — " + QString::number(percentage) + "%");
+        setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
     }
     void progress_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
@@ -336,7 +336,7 @@ namespace pk::ui::outs
         else if (current_proc > 0)
             lbl_proc->setText(format_size(current_proc));
         else
-            lbl_proc->setText("—");
+            lbl_proc->setText("-");
         qint64 total_ms = elapsed.elapsed();
         qint64 secs = total_ms / 1000;
         int h = secs / 3600;
@@ -546,6 +546,7 @@ namespace pk::ui::outs
         algo_combo = new QComboBox(this);
         algo_combo->addItem("AES-256-GCM");
         algo_combo->addItem("XChaCha20-Poly1305");
+        algo_combo->addItem("AES-256-SIV");
         algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cipher());
         form_enc->addRow("Cipher:", algo_combo);
         QLabel *aes_ni_label = new QLabel(this);
@@ -820,7 +821,7 @@ namespace pk::ui::outs
         kdf_cfg.memory_cost_kb = s_mem_cost->value() * 1024;
         kdf_cfg.parallelism = s_cores->value();
         kdf_cfg.hash_length = 32;
-        pk::crypto::cipher::algorithm algo = (algo_combo->currentIndex() == 0) ? pk::crypto::cipher::algorithm::aes_256_gcm : pk::crypto::cipher::algorithm::xchacha20_poly1305;
+        pk::crypto::cipher::algorithm algo = static_cast<pk::crypto::cipher::algorithm>(algo_combo->currentIndex());
         worker::crypto_worker *worker = new worker::crypto_worker(worker::crypto_worker::mode::pack);
         std::vector<std::string> roots;
         for (int i = 0; i < file_list->count(); ++i)
@@ -1237,6 +1238,7 @@ namespace pk::ui::outs
         algo_combo = new QComboBox(this);
         algo_combo->addItem("AES-256-GCM");
         algo_combo->addItem("XChaCha20-Poly1305");
+        algo_combo->addItem("AES-256-SIV");
         algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cipher());
         form_enc->addRow("Default Cipher:", algo_combo);
         QLabel *aes_ni_label2 = new QLabel(this);
