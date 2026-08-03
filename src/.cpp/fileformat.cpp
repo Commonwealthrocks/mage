@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 07/07/2026
+// last updated: 03/08/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -75,7 +75,9 @@ namespace pk::crypto::format
         out.write(reinterpret_cast<const char *>(&header), sizeof(header));
         if (status_cb)
             status_cb("Deriving encryption key (Argon2id)...");
-        auto key_res = pk::crypto::kdf::derive_key(password, salt_res.first.data(), salt_res.first.size(), kdf_cfg);
+        pk::crypto::kdf::kdf_cfg actual_kdf_cfg = kdf_cfg;
+        actual_kdf_cfg.hash_length = (algo == cipher::algorithm::aes_256_siv) ? 64 : 32;
+        auto key_res = pk::crypto::kdf::derive_key(password, salt_res.first.data(), salt_res.first.size(), actual_kdf_cfg);
         if (!pk::crypto::kdf::ok(key_res.second))
             throw std::runtime_error("key derivation failed");
         if (status_cb)
@@ -254,7 +256,7 @@ namespace pk::crypto::format
         kdf_cfg.parallelism = header.parallelism;
         if (kdf_cfg.parallelism < 1 || kdf_cfg.parallelism > 64)
             throw std::runtime_error("corrupted archive -> invalid parallelism");
-        kdf_cfg.hash_length = 32;
+        kdf_cfg.hash_length = (header.algo == static_cast<uint8_t>(cipher::algorithm::aes_256_siv)) ? 64 : 32;
         if (status_cb)
             status_cb("Deriving encryption key (Argon2id)...");
         auto key_res = pk::crypto::kdf::derive_key(password, header.salt, 16, kdf_cfg);
