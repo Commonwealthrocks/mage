@@ -9,6 +9,7 @@
 #include <algorithm>
 #include "../.hpp/__cipher.hpp"
 #include "../.hpp/argon2id_hashing.hpp"
+#include "../.hpp/logger.hpp"
 namespace pk::cfg
 {
     settings &settings::instance()
@@ -49,7 +50,10 @@ namespace pk::cfg
     {
         QFile file(settings_path());
         if (!file.open(QIODevice::ReadOnly))
+        {
+            pk::core::logger::log("failed to open mage.json, using defaults.");
             return;
+        }
         QJsonDocument root_doc = QJsonDocument::fromJson(file.readAll());
         if (!root_doc.isObject())
             return;
@@ -58,6 +62,7 @@ namespace pk::cfg
             return;
         QByteArray nonce = QByteArray::fromBase64(root_obj["n"].toString().toUtf8());
         QByteArray payload = QByteArray::fromBase64(root_obj["p"].toString().toUtf8());
+        pk::core::logger::log("found encrypted settings, loading with XChaCha20-Poly1305.");
         QByteArray key = QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
         // though this hardcoded key is to only make sure casual tweaks in the raw
         // json file don't work; i could make it make a key which is hardware specific
@@ -74,11 +79,16 @@ namespace pk::cfg
                 reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size());
             QJsonDocument plain_doc = QJsonDocument::fromJson(QByteArray(reinterpret_cast<const char *>(pt.data()), pt.size()));
             if (!plain_doc.isObject())
+            {
+                pk::core::logger::log("decrypted settings contained invalid JSON structure.");
                 return;
+            }
             obj = plain_doc.object();
+            pk::core::logger::log("settings decrypted and parsed successfully.");
         }
         catch (...)
         {
+            pk::core::logger::log("MAC verification failed for settings; someone tweaked them, using defaults.");
             return;
         }
         if (obj.contains("def_output_path"))
@@ -168,6 +178,11 @@ namespace pk::cfg
         if (file.open(QIODevice::WriteOnly))
         {
             file.write(secure_doc.toJson());
+            pk::core::logger::log("settings encrypted and saved to disk.");
+        }
+        else
+        {
+            pk::core::logger::log("failed to open mage.json for writing.");
         }
     }
 }
