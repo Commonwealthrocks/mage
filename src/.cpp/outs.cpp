@@ -18,6 +18,8 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QTextEdit>
+#include "../.hpp/logger.hpp"
 #include <QGroupBox>
 #include <QApplication>
 #include <QTextEdit>
@@ -1467,6 +1469,62 @@ namespace pk::ui::outs
         btn_layout->addStretch();
         layout->addLayout(btn_layout);
         dialog.exec();
+    }
+    static QWidget *cd_int_c = nullptr;
+    void toggle_internal_console()
+    {
+        if (cd_int_c)
+        {
+            if (cd_int_c->isVisible())
+            {
+                cd_int_c->hide();
+            }
+            else
+            {
+                cd_int_c->show();
+                pk::ui::outs::dont_burn_my_eyes(cd_int_c);
+                cd_int_c->raise();
+                cd_int_c->activateWindow();
+            }
+            return;
+        }
+        cd_int_c = new QWidget();
+        cd_int_c->setAttribute(Qt::WA_QuitOnClose, false);
+        cd_int_c->setWindowTitle("MAGE - internal debug console");
+        cd_int_c->resize(800, 600);
+        pk::ui::outs::dont_burn_my_eyes(cd_int_c);
+        QVBoxLayout *layout = new QVBoxLayout(cd_int_c);
+        QTextEdit *text_edit = new QTextEdit(cd_int_c);
+        text_edit->setReadOnly(true);
+        text_edit->setStyleSheet("QTextEdit { background-color: #1e1e1e; color: #fafafa; font-family: Consolas, monospace; font-size: 11pt; border: none; }");
+        layout->addWidget(text_edit);
+        for (const auto &msg : pk::core::logger::instance().get_history())
+        {
+            text_edit->append(QString::fromStdString(msg));
+        }
+        text_edit->moveCursor(QTextCursor::End);
+        QPushButton *btn_export = new QPushButton("Export log", cd_int_c);
+        layout->addWidget(btn_export, 0, Qt::AlignRight);
+        pk::core::logger::instance().set_callback([text_edit](const std::string &msg)
+                                                  {
+            QString qmsg = QString::fromStdString(msg);
+            QMetaObject::invokeMethod(text_edit, [text_edit, qmsg](){
+                text_edit->append(qmsg);
+                text_edit->moveCursor(QTextCursor::End);
+            }, Qt::QueuedConnection); });
+        QObject::connect(btn_export, &QPushButton::clicked, cd_int_c, [text_edit, cd_int_c]()
+                         {
+            QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "", "Log files (*.log) ;; Text files (*.txt);;All files (*)");
+            if (!path.isEmpty())
+            {
+                QFile f(path);
+                if (f.open(QIODevice::WriteOnly | QIODevice::Text))
+                {
+                    f.write(text_edit->toPlainText().toUtf8());
+                    f.close();
+                }
+            } });
+        cd_int_c->show();
     }
 }
 

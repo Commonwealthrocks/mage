@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 08/07/2026
+// last updated: 03/08/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -26,6 +26,7 @@ namespace pk::ui::outs
     bool r_u_a_valid_filename(const QString &name, QString *err_msg = nullptr);
     bool valid_path_probable(const QString &path, QString *err_msg = nullptr);
     void cd_about_mage(QWidget *parent);
+    void toggle_internal_console();
     class progress_dialog : public QDialog
     {
         Q_OBJECT
