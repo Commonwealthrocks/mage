@@ -1,5 +1,5 @@
 // gui.hpp
-// last updated: 08/07/2026
+// last updated: 04/08/2026
 #pragma once
 #include <QMainWindow>
 #include <QPushButton>
@@ -35,6 +35,7 @@ namespace pk::ui
         QPushButton *btn_decrypt;
         pk::ui::outs::cd_mk_archive *m_mk_archive_dialog = nullptr;
         pk::ui::outs::cd_decrypt_archive *m_decrypt_archive_dialog = nullptr;
+        QByteArray m_saved_geom;
     };
 }
 
