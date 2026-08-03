@@ -6,7 +6,7 @@ Archive creation and encryption software made in **C++** with `Qt6`, `NaCl`, `Op
 
 ## **Features**
 - "I dunno" policy, you either get nothing without the password or everything with the password.
-- File / folder encryption with **AES-256-GCM** or **XChaCha20-Poly1305** only.
+- File / folder encryption with **AES-256-GCM**, **AES-256-SIV** or **XChaCha20-Poly1305** only.
 - **Argon2ID** hashing / password deriviation with configurable specs.
 - Proper path normalization and path sanitization to prevent traversal attacks.
 - `Qt6` GUI, that hopefully doesn't blind you.
@@ -25,9 +25,7 @@ In **MAGE** there are a few features that are NOT documented in the app and only
 
 In **MAGE** the `Settings` tab and `Archive creation` tab all originally rely on the saved settings in `%appdata%\MAGE\mage.json`, however only in the general settings tab can you make changes and save them globally to the `JSON` file; when creating an archive the settings you change there are only for that session.
 
-Certain files (especially `Qt6` deps) are not needed to run **MAGE**. Now which ones are those? I dunno really, figure.
-
-## **Building**
+## **Building (Windows)**
 To compile **MAGE** yourself you need to make sure you are on a more modern **Windows** like **Windows 10** or **Windows 11** and have **MSYS2 UCRT64** installed to pull the following libraries needed for **MAGE**...
 ```bash
 pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6 mingw-w64-ucrt-x86_64-libsodium mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-xz
@@ -35,7 +33,7 @@ pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x
 
 Once that is done, you will want to clone the repo and `cd` into the `\src` directory.
 ```bash
-git clone https://github.com/commonwealthrocks/mage && cd mage/src/
+git clone https://github.com/commonwealthrocks/mage && cd mage\src\
 ```
 
 And from there you can either make a dynamic or static build, for now, static builds are still in works so it is recommended you do a dynamic build like this...
@@ -43,12 +41,25 @@ And from there you can either make a dynamic or static build, for now, static bu
 mkdir build && cd build && cmake -G "Ninja" .. && ninja && strip bin/mage.exe
 ```
 
-## **About Linux / UNIX**
-**MAGE** and my entire knowledge consists of `Win32API` docs, however I have accounted for a good majority of the **Linux** kernel quirks and audio drivers which made me severely suicidal.
+## **Building on Linux / UNIX**
+**MAGE** natively supports **Linux**! However, because I barely got my binary working on my machine; let alone any other. You will have to manually compile it as a portable `.AppImage` file.
 
-Do keep in mind, **Linux** was never tested by me, so it might work or not; who knows.
+First, install the required compilers, `Qt6` framework, and cryptography libraries (example for **Ubuntu** / **Mint** / **Debian**)...
+```bash
+sudo apt update && sudo apt install -y build-essential cmake ninja-build qt6-base-dev libqt6svg6-dev libssl-dev libsodium-dev libzstd-dev liblzma-dev libargon2-dev
+```
 
-That being said, **MAGE** is not officially compiled for **Linux** yet; because it depends a lot on each setup, so for the time being I suggest getting the portable `.zip` version of the app and using emulation software like `Wine` or `Bottles`.
+The fuckery varies on your package manager, in my case I used `apt` with **Debian**.
+
+Once your dependencies are installed, clone the repository (assuming you have `git` installed too) and execute the build...
+```bash
+git clone https://github.com/commonwealthrocks/mage && cd mage/src/
+mkdir build && cd build && cmake -G "Ninja" .. && ninja
+```
+
+Finally when it compiles, the `.AppImage` file should be somewhere along in `bin/AppDir` and from there it once again varies but on the bright side you don't need to emulate **MAGE** via `Wine` or `Bottles` anymore!
+
+Also certain sound effects won't play on the **Linux** port because most of the sound effects from the app came from `Windows\Media`; and sadly they are copyright protected and I'm too lazy to deal with that issue. But hey not like audio drivers work for most of you anyways.
 
 ## **License**
 **MAGE** is provided under the **MIT** license for any and all usage! View the license [here](license.txt).
