@@ -1,5 +1,5 @@
 // __cipher.hpp
-// last updated: 17/06/2026
+// last updated: 03/08/2026
 #pragma once
 #include "secure_memory.hpp"
 #include <vector>
@@ -11,7 +11,8 @@ namespace pk::crypto::cipher
     enum class algorithm
     {
         aes_256_gcm = 0,
-        xchacha20_poly1305 = 1
+        xchacha20_poly1305 = 1,
+        aes_256_siv = 2
     };
     class _cipher
     {
