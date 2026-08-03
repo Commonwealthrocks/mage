@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 09/07/2026
+// last updated: 03/08/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     app.setApplicationName("MAGE");
     app.setOrganizationName("MAGE");
     app.setOrganizationDomain("mage.local");
-    app.setApplicationVersion("v0.3a"); // forgot to change ts, oops
+    app.setApplicationVersion("v0.4a");
     app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
     QStringList args = app.arguments();
     if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt"))
@@ -71,14 +71,6 @@ int main(int argc, char *argv[])
     if (sodium_init() < 0)
     {
         return 1;
-    }
-    try
-    {
-        pk::cfg::settings::instance().load();
-    }
-    catch (...)
-    {
-        // ignore it, it'd be fine!
     }
     app.installEventFilter(new scroll_filter(&app));
     app.installEventFilter(new pk::ui::shortcuts::shortcut_filter(&app));
