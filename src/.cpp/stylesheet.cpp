@@ -1,5 +1,5 @@
 // stylesheet.cpp
-// last updated: 17/06/2026
+// last updated: 03/08/2026
 // fuck css
 #include "../.hpp/stylesheet.hpp"
 namespace pk::ui::style
@@ -160,6 +160,48 @@ namespace pk::ui::style
                 color: #e0e0e0;
                 padding: 4px;
                 border: 1px solid #444444;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #202020;
+                width: 12px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #555555;
+                min-height: 20px;
+                border-radius: 6px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #007acc;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #202020;
+                height: 12px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #555555;
+                min-width: 20px;
+                border-radius: 6px;
+                margin: 2px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #007acc;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
             }
         )";
     }
