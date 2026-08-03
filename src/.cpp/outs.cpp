@@ -554,13 +554,13 @@ namespace pk::ui::outs
         {
             aes_ni_label->setText("AES-NI: yeah");
             aes_ni_label->setStyleSheet("QLabel { color: #a0dca0; font-size: 11px; }");
-            aes_ni_label->setToolTip("Your CPU supports AES-NI, making AES-256-GCM extremely fast.");
+            aes_ni_label->setToolTip("Your CPU supports AES-NI, making AES-256-GCM or AES-256-SIV\nextremely fast.");
         }
         else
         {
             aes_ni_label->setText("AES-NI: nah");
             aes_ni_label->setStyleSheet("QLabel { color: #e0d060; font-size: 11px; }");
-            aes_ni_label->setToolTip("Your CPU does not support AES-NI. XChaCha20-Poly1305 is recommended over AES-256-GCM for better performance and security on this system.");
+            aes_ni_label->setToolTip("Your CPU does not support AES-NI. XChaCha20-Poly1305 is recommended over AES-256-GCM or AES-256-SIV\nfor better performance and security on this system.");
         }
         form_enc->addRow("", aes_ni_label);
         tabs->addTab(tab_enc, "Encryption");
@@ -1246,13 +1246,13 @@ namespace pk::ui::outs
         {
             aes_ni_label2->setText("AES-NI: yeah");
             aes_ni_label2->setStyleSheet("QLabel { color: #a0dca0; font-size: 11px; }");
-            aes_ni_label2->setToolTip("Your CPU supports AES-NI, making AES-256-GCM extremely fast.");
+            aes_ni_label2->setToolTip("Your CPU supports AES-NI, making AES-256-GCM or AES-256-SIV\nextremely fast.");
         }
         else
         {
             aes_ni_label2->setText("AES-NI: nah");
             aes_ni_label2->setStyleSheet("QLabel { color: #e0d060; font-size: 11px; }");
-            aes_ni_label2->setToolTip("Your CPU does not support AES-NI; XChaCha20-Poly1305 is recommended\nover AES-256-GCM for better performance and security on this system.");
+            aes_ni_label2->setToolTip("Your CPU does not support AES-NI; XChaCha20-Poly1305 is recommended\nover AES-256-GCM or AES-256-SIV\nfor better performance and security on this system.");
         }
         form_enc->addRow("", aes_ni_label2);
         s_tc = new QSpinBox(this);
