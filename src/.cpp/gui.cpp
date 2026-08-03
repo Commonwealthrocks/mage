@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 08/07/2026
+// last updated: 04/08/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -80,8 +80,8 @@ namespace pk::ui
         QWidget *central = new QWidget(this);
         setCentralWidget(central);
         QVBoxLayout *layout = new QVBoxLayout(central);
-        btn_mk = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "      Create Archive", this);
-        btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "      Decrypt Archive", this);
+        btn_mk = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "      Create archive", this);
+        btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "      Decrypt archive", this);
         btn_mk->setFixedSize(200, 45);
         btn_decrypt->setFixedSize(200, 45);
         layout->addStretch();
@@ -98,6 +98,7 @@ namespace pk::ui
     }
     void gui::on_create_archive_clicked()
     {
+        m_saved_geom = this->saveGeometry();
         this->hide();
         if (!m_mk_archive_dialog)
         {
@@ -106,6 +107,7 @@ namespace pk::ui
             connect(m_mk_archive_dialog, &QDialog::finished, this, [this]()
                     {
                 m_mk_archive_dialog = nullptr;
+                this->restoreGeometry(m_saved_geom);
                 this->show(); });
             m_mk_archive_dialog->show();
         }
@@ -117,6 +119,7 @@ namespace pk::ui
     // cm menu goes here, or well the args[] at least
     void gui::handle_args(const QString &mode, const QString &path, bool quit_on_close)
     {
+        m_saved_geom = this->saveGeometry();
         this->hide();
         if (mode == "encrypt")
         {
@@ -134,8 +137,10 @@ namespace pk::ui
                     m_mk_archive_dialog = nullptr;
                     if (quit_on_close)
                         qApp->quit();
-                    else
-                        this->show(); });
+                    else {
+                        this->restoreGeometry(m_saved_geom);
+                        this->show();
+                    } });
                 m_mk_archive_dialog->show();
             }
         }
@@ -155,14 +160,17 @@ namespace pk::ui
                     m_decrypt_archive_dialog = nullptr;
                     if (quit_on_close)
                         qApp->quit();
-                    else
-                        this->show(); });
+                    else {
+                        this->restoreGeometry(m_saved_geom);
+                        this->show();
+                    } });
                 m_decrypt_archive_dialog->show();
             }
         }
     }
     void gui::on_decrypt_archive_clicked()
     {
+        m_saved_geom = this->saveGeometry();
         this->hide();
         if (!m_decrypt_archive_dialog)
         {
@@ -171,6 +179,7 @@ namespace pk::ui
             connect(m_decrypt_archive_dialog, &QDialog::finished, this, [this]()
                     {
                 m_decrypt_archive_dialog = nullptr;
+                this->restoreGeometry(m_saved_geom);
                 this->show(); });
             m_decrypt_archive_dialog->show();
         }
@@ -181,9 +190,11 @@ namespace pk::ui
     }
     void gui::on_settings_clicked()
     {
+        m_saved_geom = this->saveGeometry();
         this->hide();
         pk::ui::outs::cd_settings dialog(nullptr);
         dialog.exec();
+        this->restoreGeometry(m_saved_geom);
         this->show();
     }
     void gui::on_keybinds_clicked()
