@@ -1,5 +1,5 @@
 ## CMakeLists.txt
-## last updated: 03/08/2026
+## last updated: 04/08/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
@@ -56,11 +56,14 @@ target_compile_options(mage_core PRIVATE
     -O2
 )
 target_link_libraries(mage_core PUBLIC
-    bcrypt
     OpenSSL::Crypto
     zstd
     LibLZMA::LibLZMA
+    argon2
 )
+if(WIN32)
+    target_link_libraries(mage_core PUBLIC bcrypt)
+endif()
 if(sodium_FOUND)
     target_link_libraries(mage_core PUBLIC ${sodium_LIBRARIES})
 else()
@@ -95,34 +98,41 @@ target_link_libraries(mage
     Qt6::Svg
     Qt6::Concurrent
     Qt6::Network
-    dwmapi
-    winmm
 )
+if(WIN32)
+    target_link_libraries(mage PRIVATE dwmapi winmm)
+endif()
 add_custom_command(TARGET mage POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:mage>/assets"
-    COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_SOURCE_DIR}/assets/__cache/no/qt.conf" "$<TARGET_FILE_DIR:mage>/qt.conf"
 )
+if(WIN32)
+    add_custom_command(TARGET mage POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+        "${CMAKE_SOURCE_DIR}/assets/__cache/no/qt.conf" "$<TARGET_FILE_DIR:mage>/qt.conf"
+    )
+endif()
 if(MAGE_STATIC_BUILD)
     message(STATUS "static")
     target_link_options(mage PRIVATE -static -static-libgcc -static-libstdc++)
 else()
     message(STATUS "dynamic (df)")
-    get_target_property(QT_QMAKE_LOCATION Qt6::qmake IMPORTED_LOCATION)
-    get_filename_component(QT_BIN_DIR "${QT_QMAKE_LOCATION}" DIRECTORY)
-    add_custom_command(TARGET mage POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E env 
-            "PATH=${QT_BIN_DIR};$ENV{PATH}"
-            ${QT_BIN_DIR}/windeployqt.exe
-            --no-translations 
-            "$<TARGET_FILE:mage>"
-        COMMENT "Copying Qt6..."
-        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-    )
+    if(WIN32)
+        get_target_property(QT_QMAKE_LOCATION Qt6::qmake IMPORTED_LOCATION)
+        get_filename_component(QT_BIN_DIR "${QT_QMAKE_LOCATION}" DIRECTORY)
+        add_custom_command(TARGET mage POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E env 
+                "PATH=${QT_BIN_DIR};$ENV{PATH}"
+                ${QT_BIN_DIR}/windeployqt.exe
+                --no-translations 
+                "$<TARGET_FILE:mage>"
+            COMMENT "Copying Qt6..."
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        )
+    endif()
     add_custom_command(TARGET mage POST_BUILD
         COMMAND bash "${CMAKE_SOURCE_DIR}/deploy_deps.sh" "$<TARGET_FILE:mage>" "$<TARGET_FILE_DIR:mage>"
-        COMMENT "Copying the entire MSYS2 fucking env..."
+        COMMENT "Copying or Packaging dependencies..."
     )
 endif()
 message(STATUS "MAGE v${PROJECT_VERSION} - build type: ${CMAKE_BUILD_TYPE}  static: ${MAGE_STATIC_BUILD}")
