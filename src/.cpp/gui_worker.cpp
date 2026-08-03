@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 07/07/2026
+// last updated: 03/08/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -15,6 +15,7 @@
 #else
 #include <sys/stat.h>
 #endif
+#include "../.hpp/logger.hpp"
 namespace pk::ui::worker
 {
     crypto_worker::crypto_worker(mode m, QObject *parent)
@@ -59,6 +60,7 @@ namespace pk::ui::worker
     }
     void crypto_worker::run()
     {
+        pk::core::logger::log("crypto worker thread started; mode: " + std::string(__mode == mode::pack ? "pack." : "unpack."));
         try
         {
             // emit the cc for better progress reporting in the
@@ -78,6 +80,7 @@ namespace pk::ui::worker
             };
             auto status_cb = [this](const std::string &status)
             {
+                pk::core::logger::log(status);
                 emit current_ac0(QString::fromStdString(status));
             };
             pk::mem_::secure_string final_password;
@@ -281,9 +284,12 @@ namespace pk::ui::worker
                     static_cast<std::size_t>(cs_mbs) * 1024 * 1024,
                     cb,
                     status_cb);
+                pk::core::logger::log("worker successfully packed archive.");
+                emit success();
             }
             else if (__mode == mode::unpack)
             {
+                pk::core::logger::log("starting archive unpack...");
                 emit current_ac0("Reading archive...");
                 pk::crypto::format::unpack_archive(in_path, output_dir, final_password, cb, []() -> bool
                                                    {
@@ -295,17 +301,21 @@ namespace pk::ui::worker
                                                                proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
                                                            Qt::BlockingQueuedConnection);
                                                        return proceed; }, status_cb);
+                pk::core::logger::log("worker successfully unpacked archive.");
             }
             emit success();
         }
         catch (const std::exception &e)
         {
+            pk::core::logger::log("exception: " + std::string(e.what()));
             emit error(QString::fromStdString(pk::error::format(e.what())));
         }
         catch (...)
         {
+            pk::core::logger::log("unknown exception caught.");
             emit error(QString::fromStdString(pk::error::format_idk()));
         }
+        pk::core::logger::log("crypto worker thread finished.");
     }
 }
 
