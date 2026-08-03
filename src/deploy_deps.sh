@@ -10,6 +10,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     mkdir -p "$APPDIR/usr/share/applications"
     mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
     cp "$EXE_PATH" "$APPDIR/usr/bin/"
+    cp -r "$(dirname "$0")/assets" "$APPDIR/usr/bin/assets"
     cat > "$APPDIR/usr/share/applications/mage.desktop" << 'EOF'
 [Desktop Entry]
 Name=MAGE
@@ -26,7 +27,8 @@ EOF
     fi
     echo "[ MAGE ] Running linuxdeployqt..."
     export VERSION="0.4"
-    "${OUT_DIR}/linuxdeployqt" "$APPDIR/usr/share/applications/mage.desktop" -appimage -unsupported-allow-new-glibc
+    QMAKE_PATH=$(which qmake6)
+    "${OUT_DIR}/linuxdeployqt" "$APPDIR/usr/share/applications/mage.desktop" -appimage -unsupported-allow-new-glibc -qmake="$QMAKE_PATH" -extra-plugins=iconengines,imageformats || true
 else
     echo "[ MAGE ] Windows MSYS2 detected, copying DLLs..."
     ldd "$EXE_PATH" | grep -iE '/ucrt64/bin/|/mingw64/bin/|/usr/bin/' | awk '{print $3}' | while read -r dll_path; do
