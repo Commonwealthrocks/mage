@@ -4,7 +4,7 @@
 EXE_PATH="$1"
 OUT_DIR="$2"
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "[MAGE] Linux detected, packing portable AppImage..."
+    echo "[ MAGE ] Linux detected, packing portable AppImage..."
     APPDIR="${OUT_DIR}/AppDir"
     mkdir -p "$APPDIR/usr/bin"
     mkdir -p "$APPDIR/usr/share/applications"
@@ -26,7 +26,7 @@ EOF
     fi
     echo "[ MAGE ] Running linuxdeployqt..."
     export VERSION="0.4"
-    "${OUT_DIR}/linuxdeployqt" "$APPDIR/usr/share/applications/mage.desktop" -appimage
+    "${OUT_DIR}/linuxdeployqt" "$APPDIR/usr/share/applications/mage.desktop" -appimage -unsupported-allow-new-glibc
 else
     echo "[ MAGE ] Windows MSYS2 detected, copying DLLs..."
     ldd "$EXE_PATH" | grep -iE '/ucrt64/bin/|/mingw64/bin/|/usr/bin/' | awk '{print $3}' | while read -r dll_path; do
