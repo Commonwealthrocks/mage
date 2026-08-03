@@ -1,5 +1,5 @@
 // settings.cpp
-// last updated: 27/06/2026
+// last updated: 03/08/2026
 #include "../.hpp/settings.hpp"
 #include <QStandardPaths>
 #include <QDir>
@@ -85,7 +85,7 @@ namespace pk::cfg
         if (obj.contains("def_chunk_size"))
             def_cs_mbs = std::clamp(obj["def_chunk_size"].toInt(), 1, 64);
         if (obj.contains("def_cipher"))
-            def_cipher_v = std::clamp(obj["def_cipher"].toInt(), static_cast<int>(pk::crypto::cipher::algorithm::aes_256_gcm), static_cast<int>(pk::crypto::cipher::algorithm::xchacha20_poly1305));
+            def_cipher_v = std::clamp(obj["def_cipher"].toInt(), static_cast<int>(pk::crypto::cipher::algorithm::aes_256_gcm), static_cast<int>(pk::crypto::cipher::algorithm::aes_256_siv));
         if (obj.contains("def_time_cost"))
             def_time_cost_ = std::clamp(obj["def_time_cost"].toInt(), 1, 100);
         if (obj.contains("def_mem_cost"))
