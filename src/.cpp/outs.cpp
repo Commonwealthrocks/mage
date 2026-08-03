@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 03/08/2026
+// last updated: 04/08/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -636,7 +636,11 @@ namespace pk::ui::outs
             }
         };
         connect(cmp_algo_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, update_comp_ui);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
         connect(cmp_use_raw, &QCheckBox::checkStateChanged, this, update_comp_ui);
+#else
+        connect(cmp_use_raw, &QCheckBox::stateChanged, this, update_comp_ui);
+#endif
         update_comp_ui();
         tabs->addTab(tab_comp, "Compression");
         main_layout->addWidget(tabs);
@@ -1341,7 +1345,11 @@ namespace pk::ui::outs
             }
         };
         connect(cmp_algo_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, update_comp_ui);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
         connect(cmp_use_raw, &QCheckBox::checkStateChanged, this, update_comp_ui);
+#else
+        connect(cmp_use_raw, &QCheckBox::stateChanged, this, update_comp_ui);
+#endif
         update_comp_ui();
         tabs->addTab(tab_comp, "Compression");
         QWidget *tab_cm = new QWidget();
@@ -1512,7 +1520,7 @@ namespace pk::ui::outs
                 text_edit->append(qmsg);
                 text_edit->moveCursor(QTextCursor::End);
             }, Qt::QueuedConnection); });
-        QObject::connect(btn_export, &QPushButton::clicked, cd_int_c, [text_edit, cd_int_c]()
+        QObject::connect(btn_export, &QPushButton::clicked, cd_int_c, [text_edit]()
                          {
             QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "", "Log files (*.log) ;; Text files (*.txt);;All files (*)");
             if (!path.isEmpty())
