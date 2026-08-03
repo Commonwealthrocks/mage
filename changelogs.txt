@@ -1,5 +1,5 @@
 ## changelogs.txt
-## last updated: 09/07/2026
+## last updated: 03/08/2026
 ## scroll all the way down for latest logs from now on
 
 VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
@@ -71,3 +71,16 @@ VERSION 0.3a - 08/07/2026 [ STARTED ON; 03/07/2026 ]
 - Re-worked decrypt dialog.
 - Secured IPC pipeline to prevent leaking of information and denial of service attacks.
 - TmlqZSBtaSBkbyBuacSNZWch
+
+VERSION 0.4a - 04/08/2026 [ STARTED ON; 01/08/2026]
+- Added AES-256-SIV as a new cipher.
+- Settings (via the raw JSON file) can no longer be edited without the app key.
+- Added internal debug console (via CTRL + SHIFT + I).
+- Added ability to export logs through internal debug console.
+- Added proper scrollbar design to replace the old one.
+- Fixed CMakeLists.txt failing on UNIX due to LibLZMA package name conflict.
+- Fixed X11 (WC) window amensia issue.
+- MAGE can now finally be compiled on native Linux / UNIX!
+- [ UNSURE ] M4 to go back from dialogs does not work on Linux / UNIX; might be because
+  of VMWare disregarding the inputs.
+- Added AppImage packaging for Linux / UNIX.
