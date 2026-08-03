@@ -14,6 +14,7 @@
 #include <utime.h>
 #include <sys/stat.h>
 #endif
+#include "../.hpp/logger.hpp"
 namespace pk::crypto::format
 {
     void pack_archive(
@@ -58,7 +59,11 @@ namespace pk::crypto::format
             throw std::runtime_error("salt generation failed");
         auto nonce_res = pk::crypto::kdf::mk_salt(24);
         if (!pk::crypto::kdf::ok(nonce_res.second))
+        {
+            pk::core::logger::log("nonce generation failed.");
             throw std::runtime_error("nonce generation failed");
+        }
+        pk::core::logger::log("archive header init: ALGO=" + std::to_string(static_cast<int>(algo)) + ", COMP=" + std::to_string(compression_algo) + " / " + std::to_string(compression_level) + ", CHUNK=" + std::to_string(chunk_size) + " bytes");
         header_f header{};
         std::memcpy(header.magic, MAGIC_BYTES, 4);
         header.version = 1;
@@ -74,14 +79,19 @@ namespace pk::crypto::format
         std::memcpy(header.base_nonce, nonce_res.first.data(), 24);
         out.write(reinterpret_cast<const char *>(&header), sizeof(header));
         if (status_cb)
-            status_cb("Deriving encryption key (Argon2id)...");
+            status_cb("Deriving encryption key...");
         pk::crypto::kdf::kdf_cfg actual_kdf_cfg = kdf_cfg;
         actual_kdf_cfg.hash_length = (algo == cipher::algorithm::aes_256_siv) ? 64 : 32;
+        pk::core::logger::log("deriving key... mem: " + std::to_string(actual_kdf_cfg.memory_cost_kb) + " KB, time: " + std::to_string(actual_kdf_cfg.time_cost) + ", cores: " + std::to_string(actual_kdf_cfg.parallelism));
         auto key_res = pk::crypto::kdf::derive_key(password, salt_res.first.data(), salt_res.first.size(), actual_kdf_cfg);
         if (!pk::crypto::kdf::ok(key_res.second))
-            throw std::runtime_error("key derivation failed");
+        {
+            pk::core::logger::log("key derivation failed.");
+            throw std::runtime_error("key derivation failed.");
+        }
+        pk::core::logger::log("key derived successfully.");
         if (status_cb)
-            status_cb("Encrypting " + std::to_string(entries.size()) + " files...");
+            status_cb("encrypting " + std::to_string(entries.size()) + " files...");
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
         std::vector<uint8_t> buffer(chunk_size);
@@ -102,8 +112,9 @@ namespace pk::crypto::format
                 current_nonce[i] ^= static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
             }
             std::memcpy(ad.data() + sizeof(header), &chunk_index, sizeof(uint64_t));
-            std::vector<uint8_t> ciphertext = cipher->encrypt_chunk(buffer.data(), buffer_pos, ad.data(), ad.size(), current_nonce, nonce_size);
-            out.write(reinterpret_cast<const char *>(ciphertext.data()), ciphertext.size());
+            auto ct = cipher->encrypt_chunk(buffer.data(), buffer_pos, ad.data(), ad.size(), current_nonce, nonce_size);
+            out.write(reinterpret_cast<const char *>(ct.data()), ct.size());
+            pk::core::logger::log("flushed encrypted chunk #" + std::to_string(chunk_index) + " (" + std::to_string(ct.size()) + " bytes).");
             chunk_index++;
             buffer_pos = 0;
         };
@@ -258,12 +269,12 @@ namespace pk::crypto::format
             throw std::runtime_error("corrupted archive -> invalid parallelism");
         kdf_cfg.hash_length = (header.algo == static_cast<uint8_t>(cipher::algorithm::aes_256_siv)) ? 64 : 32;
         if (status_cb)
-            status_cb("Deriving encryption key (Argon2id)...");
+            status_cb("deriving encryption key...");
         auto key_res = pk::crypto::kdf::derive_key(password, header.salt, 16, kdf_cfg);
         if (!pk::crypto::kdf::ok(key_res.second))
             throw std::runtime_error("key derivation failed");
         if (status_cb)
-            status_cb("Extracting files...");
+            status_cb("extracting files...");
         std::size_t chunk_size = header.chunk_size_bytes;
         if (chunk_size < 1024 * 1024 || chunk_size > 64 * 1024 * 1024)
             throw std::runtime_error("corrupted archive -> invalid chunk size");
