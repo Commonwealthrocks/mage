@@ -1,10 +1,10 @@
 ## CMakeLists.txt
-## last updated: 08/07/2026
+## last updated: 03/08/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
 cmake_minimum_required(VERSION 3.20)
-project(mage_core VERSION 0.3 LANGUAGES CXX)
+project(mage_core VERSION 0.4 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -39,6 +39,7 @@ add_library(mage_core STATIC
     .cpp/compression.cpp
     .cpp/aes_ni.cpp
     .cpp/keyfile.cpp
+    .cpp/aes256siv.cpp
 )
 find_package(OpenSSL REQUIRED)
 find_package(sodium QUIET)
