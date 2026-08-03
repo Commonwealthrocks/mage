@@ -1,5 +1,5 @@
 ## tooltips
-## last updated: 27/06/2026
+## last updated: 03/08/2026
 ## dev comments are parsed and indicated with a "#" and anything after it
 ## to define a text segment, you use the following;
 
@@ -69,8 +69,10 @@ XChaCha20-Poly1305 (NaCl based) is a generally well optimized algorithm for encr
 great on most CPUs / machines that don't support AES-NI; resulting in a much faster target speed than
 AES-256-GCM if AES-NI is unavailable.
 
-Overall both algorithms are equally secure, there is no definitive "better" choice; just depends on your preference
-and personal restraints.
+AES-256-SIV (OpenSSL based) is a synthetic initialization vector AEAD cipher which provides strong protection against accidental nonce reuse; it requires two passes (therefore is slower) per chunk 
+but is highly resilient.
+
+Overall these algorithms are equally secure, there is no definitive "better" choice; just depends on your preference and personal restraints.
 """
 
 default_argon2_time="""
