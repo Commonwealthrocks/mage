@@ -44,7 +44,7 @@ add_library(mage_core STATIC
 find_package(OpenSSL REQUIRED)
 find_package(sodium QUIET)
 find_package(zstd REQUIRED)
-find_package(liblzma REQUIRED)
+find_package(LibLZMA REQUIRED)
 target_include_directories(mage_core PUBLIC
     ${CMAKE_SOURCE_DIR}/.hpp
     ${OPENSSL_INCLUDE_DIR}
