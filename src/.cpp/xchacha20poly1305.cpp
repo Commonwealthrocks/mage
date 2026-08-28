@@ -1,5 +1,5 @@
 // xchacha20poly1305.cpp
-// last updated: 17/06/2026
+// last updated: 29/08/2026
 #include "../.hpp/xchacha20poly1305.hpp"
 #include <stdexcept>
 namespace pk::crypto::cipher
@@ -7,7 +7,7 @@ namespace pk::crypto::cipher
     void xchacha20poly1305::init(const uint8_t *key, std::size_t key_len)
     {
         if (key_len != crypto_aead_xchacha20poly1305_ietf_KEYBYTES)
-            throw std::invalid_argument("XChaCha20-Poly1305 requires a 32-byte key");
+            throw std::invalid_argument("XChaCha20-Poly1305 requires a 32-byte key.");
         mm_key.assign(key, key + key_len);
     }
     std::vector<uint8_t> xchacha20poly1305::encrypt_chunk(
@@ -16,9 +16,9 @@ namespace pk::crypto::cipher
         const uint8_t *nonce, std::size_t nonce_len)
     {
         if (mm_key.empty())
-            throw std::logic_error("cipher not initialized");
+            throw std::logic_error("cipher not initialized.");
         if (nonce_len != crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
-            throw std::invalid_argument("invalid nonce size");
+            throw std::invalid_argument("invalid nonce size.");
         std::vector<uint8_t> out(pt_len + crypto_aead_xchacha20poly1305_ietf_ABYTES);
         unsigned long long ciphertext_len = 0;
         int ret = crypto_aead_xchacha20poly1305_ietf_encrypt(
@@ -29,7 +29,7 @@ namespace pk::crypto::cipher
             nonce,
             mm_key.data());
         if (ret != 0)
-            throw std::runtime_error("crypto_aead_xchacha20poly1305_ietf_encrypt failed");
+            throw std::runtime_error("crypto_aead_xchacha20poly1305_ietf_encrypt failed.");
         out.resize(ciphertext_len);
         return out;
     }
@@ -39,11 +39,11 @@ namespace pk::crypto::cipher
         const uint8_t *nonce, std::size_t nonce_len)
     {
         if (mm_key.empty())
-            throw std::logic_error("cipher not initialized");
+            throw std::logic_error("cipher not initialized.");
         if (nonce_len != crypto_aead_xchacha20poly1305_ietf_NPUBBYTES)
-            throw std::invalid_argument("invalid nonce size");
+            throw std::invalid_argument("invalid nonce size.");
         if (ct_len < crypto_aead_xchacha20poly1305_ietf_ABYTES)
-            throw std::invalid_argument("ciphertext too short to contain MAC");
+            throw std::invalid_argument("ciphertext too short to contain MAC.");
         std::size_t plaintext_len = ct_len - crypto_aead_xchacha20poly1305_ietf_ABYTES;
         pk::mem_::secure_vector out(plaintext_len);
         unsigned long long decrypted_len = 0;
@@ -55,7 +55,7 @@ namespace pk::crypto::cipher
             nonce,
             mm_key.data());
         if (ret != 0)
-            throw std::runtime_error("MAC verification failed");
+            throw std::runtime_error("MAC verification failed.");
         return out;
     }
 }
