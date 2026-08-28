@@ -34,6 +34,8 @@ namespace pk::error
         // paths, fuck me
         if (what.find("failed to open input file") != std::string::npos)
             return "File system error; could not open the specified input file.";
+        if (what.find("failed to read complete file") != std::string::npos)
+            return "File system error; failed to read complete file (possibly due to drive error or corruption).";
         if (what.find("failed to open output file") != std::string::npos || what.find("failed to create output file") != std::string::npos)
             return "File system error; could not create the specified output file.";
         if (what.find("path conflict:") != std::string::npos)
