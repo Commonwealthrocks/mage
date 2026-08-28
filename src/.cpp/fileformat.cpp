@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 03/08/2026
+// last updated: 29/08/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -213,13 +213,7 @@ namespace pk::crypto::format
                 }
                 if (remaining > 0)
                 {
-                    std::vector<char> zeros(std::min<uint64_t>(remaining, 1024 * 1024), 0);
-                    while (remaining > 0)
-                    {
-                        std::size_t to_write = static_cast<std::size_t>(std::min<uint64_t>(remaining, zeros.size()));
-                        write_stream(zeros.data(), to_write);
-                        remaining -= to_write;
-                    }
+                    throw std::runtime_error("failed to read complete file: " + entry.source_path.string());
                 }
             }
         }
