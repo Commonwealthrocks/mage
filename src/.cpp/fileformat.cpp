@@ -111,7 +111,10 @@ namespace pk::crypto::format
             {
                 current_nonce[i] ^= static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
             }
-            std::memcpy(ad.data() + sizeof(header), &chunk_index, sizeof(uint64_t));
+            for (std::size_t i = 0; i < 8; ++i)
+            {
+                ad[sizeof(header) + i] = static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
+            }
             auto ct = cipher->encrypt_chunk(buffer.data(), buffer_pos, ad.data(), ad.size(), current_nonce, nonce_size);
             out.write(reinterpret_cast<const char *>(ct.data()), ct.size());
             pk::core::logger::log("flushed encrypted chunk #" + std::to_string(chunk_index) + " (" + std::to_string(ct.size()) + " bytes).");
@@ -301,7 +304,10 @@ namespace pk::crypto::format
             {
                 current_nonce[i] ^= static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
             }
-            std::memcpy(ad.data() + sizeof(header), &chunk_index, sizeof(uint64_t));
+            for (std::size_t i = 0; i < 8; ++i)
+            {
+                ad[sizeof(header) + i] = static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
+            }
             auto pt = cipher->decrypt_chunk(buffer.data(), bytes_read, ad.data(), ad.size(), current_nonce, nonce_size);
             plaintext_stream.assign(pt.begin(), pt.end());
             plaintext_pos = 0;
