@@ -1,5 +1,5 @@
 // error_msg.cpp
-// last updated: 17/06/2026
+// last updated: 29/08/2026
 #include "../.hpp/error_msg.hpp"
 namespace pk::error
 {
@@ -23,11 +23,11 @@ namespace pk::error
             return "Format error; this archive version is not supported by your client.";
         if (what.find("file too small for header") != std::string::npos)
             return "Format error; the file is too small to be a valid archive.";
-        if (what.find("corrupted archive: invalid") != std::string::npos)
+        if (what.find("corrupted archive -> invalid") != std::string::npos)
             return "Format error; " + what + ".";
         if (what.find("unexpected EOF") != std::string::npos)
             return "Format error; unexpected end of file reached during extraction.";
-        if (what.find("corrupted chunk: too small") != std::string::npos)
+        if (what.find("corrupted chunk -> too small") != std::string::npos)
             return "Format error; an archive chunk is truncated or corrupted.";
         if (what.find("limit: 1,000,000") != std::string::npos)
             return "Sanity check failed; archive exceeds the 1,000,000 file limit.";
@@ -38,6 +38,8 @@ namespace pk::error
             return "File system error; could not create the specified output file.";
         if (what.find("path conflict:") != std::string::npos)
             return "Path conflict; " + what.substr(14); // skip "path conflict:" prefix
+        if (what.find("path conflict ->") != std::string::npos)
+            return "Path conflict; " + what.substr(16); // skip "path conflict ->" prefix
         if (what.find("Invalid or malicious path") != std::string::npos || what.find("escapes the output directory") != std::string::npos)
             return "Security error; " + what + ".";
         if (what.find("VirtualLock quota exceeded") != std::string::npos)
