@@ -360,6 +360,7 @@ namespace pk::crypto::format
                 throw std::runtime_error("possible zipbomb detected");
             }
         }
+        uint64_t aoz = 0;
         uint32_t num_entries = 0;
         read_from_stream(&num_entries, sizeof(num_entries));
         if (num_entries > 1000000)
@@ -381,6 +382,11 @@ namespace pk::crypto::format
             read_from_stream(&is_dir, sizeof(is_dir));
             uint64_t file_size = 0;
             read_from_stream(&file_size, sizeof(file_size));
+            aoz += file_size;
+            if (aoz > total_origin_size)
+            {
+                throw std::runtime_error("archive corruption or zipbomb bypass: entries size exceeds declared total size");
+            }
             uint64_t ctime = 0, atime = 0, mtime = 0;
             uint32_t attrs = 0;
             if (has_meta)
