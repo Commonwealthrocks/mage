@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 03/08/2026
+// last updated: 29/08/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -285,7 +285,6 @@ namespace pk::ui::worker
                     cb,
                     status_cb);
                 pk::core::logger::log("worker successfully packed archive.");
-                emit success();
             }
             else if (__mode == mode::unpack)
             {
