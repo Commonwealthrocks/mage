@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 04/08/2026
+// last updated: 08/09/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -1392,6 +1392,9 @@ namespace pk::ui::outs
 #endif
         main_layout->addWidget(tabs);
         QHBoxLayout *action_layout = new QHBoxLayout();
+        QLabel *lbl_tip = new QLabel("     Tip: hover over a setting to get its tooltip!", this);
+        lbl_tip->setStyleSheet("color: #aaaaaa; font-style: italic; font-size: 11px;");
+        action_layout->addWidget(lbl_tip);
         action_layout->addStretch();
         QPushButton *btn_save = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Save", this);
         QPushButton *btn_cancel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Close", this);
@@ -1456,7 +1459,7 @@ namespace pk::ui::outs
         line1->setFrameShadow(QFrame::Sunken);
         layout->addWidget(line1);
         QLabel *lbl_info = new QLabel(
-            "Version: v0.4a\n"
+            "Version: v0.5a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
             "Made by: Common, just Common.\n"
             "Audited by: no one. ",
@@ -1522,7 +1525,7 @@ namespace pk::ui::outs
             }, Qt::QueuedConnection); });
         QObject::connect(btn_export, &QPushButton::clicked, cd_int_c, [text_edit]()
                          {
-            QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "", "Log files (*.log) ;; Text files (*.txt);;All files (*)");
+            QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "", "Log files (*.log) ;; Text files (*.txt) ;; All files (*)");
             if (!path.isEmpty())
             {
                 QFile f(path);
