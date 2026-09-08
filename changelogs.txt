@@ -1,5 +1,5 @@
 ## changelogs.txt
-## last updated: 03/08/2026
+## last updated: 08/09/2026
 ## scroll all the way down for latest logs from now on
 
 VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
@@ -84,3 +84,15 @@ VERSION 0.4a - 04/08/2026 [ STARTED ON; 01/08/2026]
 - [ UNSURE ] M4 to go back from dialogs does not work on Linux / UNIX; might be because
   of VMWare disregarding the inputs.
 - Added AppImage packaging for Linux / UNIX.
+
+VERSION 0.5a - 08/09/2026 [ STARTED ON; 28/08/2026]
+- Fixed mismatching error string being fed into error_msg.cpp.
+- Serialization of chunk indexes in MAGE's AAD is now enforced in little-endian byte
+  order.
+- Fixed possible CVE with zipbombs by forging the total_origin_size in file header.
+- Added file format specsheet / documentation (MD).
+- Added threat model documentation (MD).
+- Added KDF specsheet and entropy usage documentation (MD).
+- Fix directory flattening bug where folder contents lost their parent directory when
+  extracting multiple files / folders at once.
+- Added helpful tooltip in settings dialog for tooltips about said settings.
