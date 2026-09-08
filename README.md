@@ -4,6 +4,12 @@ Archive creation and encryption software made in **C++** with `Qt6`, `NaCl`, `Op
 ## **Warning**
 **MAGE** as a dedicated encryption tool is NOT audited. Meaning it is not suited for professional usage, and **MAGE** is still early into development; most of the features ARE tested a lot to make sure they are not exploitable but there will always be edge cases, use with caution like any software.
 
+## **Documentation**
+You can check out the documentation for the threat model, usage of **Argon2id** and the `MAGE1` file format through these links...
+- **[File format](docs/fileformat.md)**
+- **[KDF usage](docs/kdf.md)**
+- **[Threat model](docs/threat_model.md)**
+
 ## **Features**
 - "I dunno" policy, you either get nothing without the password or everything with the password.
 - File / folder encryption with **AES-256-GCM**, **AES-256-SIV** or **XChaCha20-Poly1305** only.
@@ -20,46 +26,25 @@ Archive creation and encryption software made in **C++** with `Qt6`, `NaCl`, `Op
 - Bulk file decryption! Provided the entropy source matches across all files...
 - Much more for you to see in the app.
 
-## **General tips**
-In **MAGE** there are a few features that are NOT documented in the app and only here. Example, when holding down `SHIFT` or `M2` and hovering over a spinner, you can rapidly cycle through the available options for it.
+## **Obtaining MAGE yourself**
+You can either get **MAGE** via the [pre-built binaries](https://github.com/Commonwealthrocks/mage/releases) for **Windows**; while for **UNIX** there is no pre-compiled binary and you will have to do it manually.
 
-In **MAGE** the `Settings` tab and `Archive creation` tab all originally rely on the saved settings in `%appdata%\MAGE\mage.json`, however only in the general settings tab can you make changes and save them globally to the `JSON` file; when creating an archive the settings you change there are only for that session.
+### **Windows**
+To compile **MAGE** on **Windows** you need to be on a more modern version of the OS like **Windows 10** or **11**; and the recommended way to compile is via **MSYS2 UCRT64**
 
-## **Building (Windows)**
-To compile **MAGE** yourself you need to make sure you are on a more modern **Windows** like **Windows 10** or **Windows 11** and have **MSYS2 UCRT64** installed to pull the following libraries needed for **MAGE**...
+Install the needed packages if they are not present already; and optionally install `git` if it is not present with `pacman -S mingw-w64-ucrt-x86_64-git`.
 ```bash
 pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6 mingw-w64-ucrt-x86_64-libsodium mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-xz
 ```
-
-Once that is done, you will want to clone the repo and `cd` into the `\src` directory.
-```bash
-git clone https://github.com/commonwealthrocks/mage && cd mage\src\
-```
-
-And from there you can either make a dynamic or static build, for now, static builds are still in works so it is recommended you do a dynamic build like this...
-```bash
-mkdir build && cd build && cmake -G "Ninja" .. && ninja && strip bin/mage.exe
-```
-
-## **Building on Linux / UNIX**
-**MAGE** natively supports **Linux**! However, because I barely got my binary working on my machine; let alone any other. You will have to manually compile it as a portable `.AppImage` file.
-
-First, install the required compilers, `Qt6` framework, and cryptography libraries (example for **Ubuntu** / **Mint** / **Debian**)...
-```bash
-sudo apt update && sudo apt install -y build-essential cmake ninja-build qt6-base-dev libqt6svg6-dev libssl-dev libsodium-dev libzstd-dev liblzma-dev libargon2-dev
-```
-
-The fuckery varies on your package manager, in my case I used `apt` with **Debian**.
-
-Once your dependencies are installed, clone the repository (assuming you have `git` installed too) and execute the build...
+After that simply clone the repo and enter the `mage\src` directory...
 ```bash
 git clone https://github.com/commonwealthrocks/mage && cd mage/src/
-mkdir build && cd build && cmake -G "Ninja" .. && ninja
 ```
-
-Finally when it compiles, the `.AppImage` file should be somewhere along in `bin/AppDir` and from there it once again varies but on the bright side you don't need to emulate **MAGE** via `Wine` or `Bottles` anymore!
-
-Also certain sound effects won't play on the **Linux** port because most of the sound effects from the app came from `Windows\Media`; and sadly they are copyright protected and I'm too lazy to deal with that issue. But hey not like audio drivers work for most of you anyways.
+After that you can (hopefully) compile the app via `Ninja` and `CMake`...
+```
+mkdir build && cd build && cmake -G "Ninja" .. && ninja && strip bin/mage.exe
+```
+If you want a standalone installer too for whatever reason, after compiling make sure you have **Inno Installer** installed on your machine and run the `installer.iss` file.
 
 ## **License**
 **MAGE** is provided under the **MIT** license for any and all usage! View the license [here](license.txt).
