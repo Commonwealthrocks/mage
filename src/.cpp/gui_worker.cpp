@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 29/08/2026
+// last updated: 08/09/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -113,7 +113,7 @@ namespace pk::ui::worker
             {
                 emit current_ac0("Scanning files...");
                 std::vector<pk::crypto::format::archive_entry> entries;
-                std::filesystem::path archive_base_name = std::filesystem::path(output_path).stem();
+                std::filesystem::path abn___ = std::filesystem::path(output_path).stem();
                 std::error_code ec_out;
                 auto abs_out = std::filesystem::weakly_canonical(output_path, ec_out);
                 for (const auto &root_str : roots_f_rooted)
@@ -143,6 +143,40 @@ namespace pk::ui::worker
 #endif
                     if (std::filesystem::is_directory(root_path))
                     {
+                        {
+                            pk::crypto::format::archive_entry dir_ae;
+                            dir_ae.source_path = root_path;
+                            dir_ae.is_directory = true;
+                            dir_ae.file_size = 0;
+                            dir_ae.relative_path = (abn___ / root_path.filename()).generic_string();
+                            if (__cp_metadata)
+                            {
+#ifdef _WIN32
+                                WIN32_FILE_ATTRIBUTE_DATA rinfo;
+                                if (GetFileAttributesExW(root_path.wstring().c_str(), GetFileExInfoStandard, &rinfo))
+                                {
+                                    dir_ae.ctime = ((uint64_t)rinfo.ftCreationTime.dwHighDateTime << 32) | rinfo.ftCreationTime.dwLowDateTime;
+                                    dir_ae.atime = ((uint64_t)rinfo.ftLastAccessTime.dwHighDateTime << 32) | rinfo.ftLastAccessTime.dwLowDateTime;
+                                    dir_ae.mtime = ((uint64_t)rinfo.ftLastWriteTime.dwHighDateTime << 32) | rinfo.ftLastWriteTime.dwLowDateTime;
+                                    dir_ae.attrs = rinfo.dwFileAttributes;
+                                }
+#else
+                                struct stat rst;
+                                if (stat(root_path.string().c_str(), &rst) == 0)
+                                {
+                                    auto unix2ft = [](time_t t) -> uint64_t
+                                    {
+                                        return (static_cast<uint64_t>(t) * 10000000ULL) + 116444736000000000ULL;
+                                    };
+                                    dir_ae.ctime = unix2ft(rst.st_ctime);
+                                    dir_ae.atime = unix2ft(rst.st_atime);
+                                    dir_ae.mtime = unix2ft(rst.st_mtime);
+                                    dir_ae.attrs = rst.st_mode;
+                                }
+#endif
+                            }
+                            entries.push_back(std::move(dir_ae));
+                        }
                         auto it = std::filesystem::recursive_directory_iterator(root_path, std::filesystem::directory_options::skip_permission_denied);
                         auto end = std::filesystem::recursive_directory_iterator();
                         while (it != end)
@@ -203,7 +237,7 @@ namespace pk::ui::worker
                             if (rel_str.empty() || rel_str == ".")
                                 rel_str = dir_entry.path().filename().generic_string();
 
-                            ae.relative_path = (archive_base_name / rel_str).generic_string();
+                            ae.relative_path = (abn___ / root_path.filename() / rel_str).generic_string();
                             if (__cp_metadata)
                             {
 #ifdef _WIN32
@@ -239,7 +273,7 @@ namespace pk::ui::worker
 
                         pk::crypto::format::archive_entry ae;
                         ae.source_path = root_path;
-                        ae.relative_path = (archive_base_name / root_path.filename()).generic_string();
+                        ae.relative_path = (abn___ / root_path.filename()).generic_string();
                         ae.is_directory = false;
                         ae.file_size = fsize;
                         if (__cp_metadata)
