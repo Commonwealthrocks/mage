@@ -1,13 +1,21 @@
-## **MAGE1 file format**
+# **MAGE1 file format**
 The `.mage` archive format is simple on the outside but extremely strict on the inside; it uses a solid compression model, meaning the archive's metadata (file paths, timestamps, directory structures) is compressed and encrypted right alongside the actual file contents.
 
-This prevents metadata leaks (attackers can't even see how many files are inside) and jacks up the compression ratio since paths and structural data compress very very well together.
+## **Nonce construction (RFC 8439 / TLS 1.3 standard)**
+To guarantee nonce uniqueness while preventing reordering attacks, **MAGE** constructs nonces and AAD dynamically per chunk using a monotonically increasing 64-bit `chunk_index` (starting at 0):
 
+1. **Dynamic truncation:** the 24-byte `base nonce` is first truncated to the exact size required by the active cipher (`12` bytes for **AES-GCM**, `24` bytes for **XChaCha20**, or `16` bytes for **AES-SIV**).
+2. **Nonce XOR:** `current nonce = truncated base nonce XOR chunk_index`
+3. **AAD (additional authenticated data):** `[65-byte header] + [8-byte chunk_index (little-endian)]`
+
+This ensures that every chunk has a mathematically unique nonce, and chunks cannot be swapped, reordered, or moved without the MAC verification instantly failing.
+
+## **The format itself**
 The format is split into two parts...
 
 The `header` which is 65 bytes; the `header` is completely unencrypted since it holds KDF parameters and magic bytes. If it were encrypted, there'd be no possible decryption. The second part of the format is the `payload` with a size of N bytes (N for *"God knows how many"*); the `payload` is the encrypted (and optionally compressed) stream holding everything else.
 
-## **The header (65 bytes)**
+### **The header (65 bytes)**
 All integers are stored in **little-endian** byte order, always. Since not every device / OS / arch picks the same byte order, enforcement is needed.
 
 | Offset |  Size (bytes) |      Type     |        Name       |                                          Description                                         |
@@ -23,19 +31,19 @@ All integers are stored in **little-endian** byte order, always. Since not every
 | `0x11` |       4       |   `uint32_t`  |  **Parallelism**  |                                        Argon2id lanes.                                       |
 | `0x15` |      16       | `uint8_t[16]` |   **KDF salt**    |                                   random salt for Argon2id.                                  |
 | `0x25` |      24       | `uint8_t[24]` |   **Base nonce**  |                             base IV for constructing chunk nonces.                           |
-| `0x3D` |       4       |   `uint32_t`  |  **Chunk Size**   |                               how many bytes per encrypted chunk.                            |
+| `0x3D` |       4       |   `uint32_t`  |  **Chunk size**   |                               how many bytes per encrypted chunk.                            |
 
-## **The payload**
+### **The payload**
 Once you derive the master key using **Argon2id**, and decrypt / decompress the payload stream... what does it actually look like? Well its *mostly* of what you'd expect for a strict mathematical archive format.
 
-### **1. Zipbomb prevention (sorta)**
+#### **1. Zipbomb prevention (sorta)**
 Right at the start of the stream, there's a single `8-byte` integer...
 
 $$ \text{total origin size} \quad (\text{uint64\_t}) $$
 
 This is the uncompressed size of all files combined; before doing *anything*, the unpacker checks this to make sure you aren't about to unpack a petabyte of zeros onto your SSD; they're not really cheap nowadays.
 
-### **2. The entry table**
+#### **2. The entry table**
 Next up is the file table; first, a `4-byte` integer telling us how many things we have in the archive...
 
 $$ \text{number of entries} \quad (\text{uint32\_t}) $$
@@ -58,7 +66,7 @@ Do note, the hardcap / limit for the max amount of entries or files in a single 
 |  `8` | `uint64_t` |            **MTime**: modification time.            |
 |  `4` | `uint32_t` | **Attributes**: native OS attributes / permissions. |
 
-### **3. The File Data**
+#### **3. The file data**
 After the `entry table` is completely exhausted, the raw file data begins. 
 The bytes of every single file are simply concatenated together in the **exact same order** they appeared in the `entry table`. 
 
@@ -67,7 +75,7 @@ Directories are *skipped* since they hold no storage mass or data. 0-byte files 
 That's pretty much it, when the stream runs out; it is done and dusted!
 
 
-### **Why not just standard `.zip`?**
+## **Why not just standard `.zip`?**
 I don't think I need to explain this, the `.zip` format (legacy especially) is flawed; very flawed. It has a history of being very exploitable from path traversal (commonly named *"The Zip Slip"*), header n' parser mismatch (called *"The Zombie Zip"*), archive concatenation n' obfuscation, and so on. The list is getting too long already.
 
 **NOTE TO YOU READING THIS!!** The `.mage` format has no current reported vulnerabilities or CVEs but that does not mean they don't exist or they are impossible to forge; this document is a glance at the format from an "on-paper" view. This format should be audited and peer-reviewed like any other format before being "recommended".
