@@ -41,10 +41,27 @@ After that simply clone the repo and enter the `mage\src` directory...
 git clone https://github.com/commonwealthrocks/mage && cd mage/src/
 ```
 After that you can (hopefully) compile the app via `Ninja` and `CMake`...
-```
+```bash
 mkdir build && cd build && cmake -G "Ninja" .. && ninja && strip bin/mage.exe
 ```
 If you want a standalone installer too for whatever reason, after compiling make sure you have **Inno Installer** installed on your machine and run the `installer.iss` file.
+
+### **Linux / UNIX**
+For **Linux / UNIX** it varies a lot since there are a LOT of different distros and ways to compile software with the penguin; for my example I used **Debian 12 Bookworm** via the `apt` package manager.
+
+Firstly install the needed packages / libraries if not present...
+```bash
+sudo apt update && sudo apt install -y build-essential cmake ninja-build qt6-base-dev libqt6svg6-dev libssl-dev libsodium-dev libzstd-dev liblzma-dev libargon2-dev
+```
+After that, clone the repo and enter the `mage/src` directory...
+```bash
+git clone https://github.com/commonwealthrocks/mage && cd mage/src/
+```
+And finally you should be able to compile **MAGE** into an `.AppImage`...
+```bash
+mkdir build && cd build && cmake -G "Ninja" .. && ninja
+```
+Do note the **Linux** port is not *perfect* in any way; it is not as tested like the **Windows** versions; something may break like audio, GUI re-sizing, and so on.
 
 ## **License**
 **MAGE** is provided under the **MIT** license for any and all usage! View the license [here](license.txt).
