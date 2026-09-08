@@ -15,7 +15,7 @@ The question *"Who is MAGE for?"* is probably my least favorite answer to think 
 |         **Archive tampering**        |              **Authenticated encryption** - the `header` is AAD; every chunk is MAC-verified before decryption.           |
 |           **Path traversal**         |                **Strict canonicalization** - 22 separate validation checks kill *"Zip Slip"* attempts dead.               |
 |           **Zipbomb / DoS**          |                  **Dynamic size tracking** sizes are accumulated and strictly enforced during extraction.                 |
-|          **Coercion / duress**       | **Indistinguishability** - unified error messages and keyfiles give you plausible deniability on authentication failures. |
+|          **Coercion / duress**       | **Indistinguishability** - unified error messages and keyfiles give you indistinguishability of authentication failure (an attacker cannot prove if the password was wrong, a keyfile was missing; or the archive is corrupt). |
 | **Memory forensics (opportunistic)** |                    **Secure allocator** - explicit wipes and `VirtualLock` / `mlock` on sensitive buffers.                |
 |          **Self-sabotage**           |                        **Sanity checks** - double-encryption and self-archiving are explicitly blocked.                   |
 
