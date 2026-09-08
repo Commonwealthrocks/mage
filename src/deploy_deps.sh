@@ -1,6 +1,6 @@
-##!/bin/bash
+#!/bin/bash
 ## deploy_deps.sh
-## last updated: 04/08/2026
+## last updated: 08/09/2026
 EXE_PATH="$1"
 OUT_DIR="$2"
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
