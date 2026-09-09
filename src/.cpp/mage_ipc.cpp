@@ -1,8 +1,11 @@
 // mage_ipc.cpp
-// last updated: 09/07/2026
+// last updated: 09/09/2026
 #include "../.hpp/mage_ipc.hpp"
 #include <QDataStream>
 #include <QCryptographicHash>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 namespace pk::ipc
 {
     static QString get_ipc_name()
@@ -20,6 +23,9 @@ namespace pk::ipc
         socket.connectToServer(get_ipc_name());
         if (socket.waitForConnected(500))
         {
+#ifdef _WIN32
+            AllowSetForegroundWindow(ASFW_ANY);
+#endif
             QByteArray block;
             QDataStream out(&block, QIODevice::WriteOnly);
             out.setVersion(QDataStream::Qt_6_0);
@@ -35,7 +41,6 @@ namespace pk::ipc
     {
         connect(m_server, &QLocalServer::newConnection, this, &ipc_server::hn_connection);
     }
-
     ipc_server::~ipc_server()
     {
         if (m_server->isListening())
