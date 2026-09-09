@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 04/08/2026
+// last updated: 09/09/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -126,6 +126,8 @@ namespace pk::ui
             if (m_mk_archive_dialog)
             {
                 m_mk_archive_dialog->add_path(path);
+                m_mk_archive_dialog->show();
+                m_mk_archive_dialog->raise();
                 m_mk_archive_dialog->activateWindow();
             }
             else
@@ -142,6 +144,8 @@ namespace pk::ui
                         this->show();
                     } });
                 m_mk_archive_dialog->show();
+                m_mk_archive_dialog->raise();
+                m_mk_archive_dialog->activateWindow();
             }
         }
         else if (mode == "decrypt")
@@ -149,6 +153,8 @@ namespace pk::ui
             if (m_decrypt_archive_dialog)
             {
                 m_decrypt_archive_dialog->add_path(path);
+                m_decrypt_archive_dialog->show();
+                m_decrypt_archive_dialog->raise();
                 m_decrypt_archive_dialog->activateWindow();
             }
             else
@@ -165,6 +171,8 @@ namespace pk::ui
                         this->show();
                     } });
                 m_decrypt_archive_dialog->show();
+                m_decrypt_archive_dialog->raise();
+                m_decrypt_archive_dialog->activateWindow();
             }
         }
     }
