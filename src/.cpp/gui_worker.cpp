@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 08/09/2026
+// last updated: 01/10/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -7,6 +7,8 @@
 #include "../.hpp/outs.hpp"
 #include "../.hpp/sfx.hpp"
 #include <QApplication>
+#include <QMessageBox>
+#include <QPushButton>
 #include <filesystem>
 #include <stdexcept>
 #include <fstream>
@@ -48,15 +50,19 @@ namespace pk::ui::worker
         cs_mbs = chunk_size_mb;
     }
     void crypto_worker::ss_def_unpk_params(
-        const QString &in_path,
-        const QString &out_dir,
-        const QString &password,
-        const QString &keyfile_path)
+        const QString &in,
+        const QString &out,
+        const QString &pwd,
+        const QString &kf,
+        int ext_beh,
+        int ext_ow)
     {
-        this->in_path = in_path.toUtf8().toStdString();
-        output_dir = out_dir.toUtf8().toStdString();
-        this->password = password.toUtf8().toStdString();
-        this->keyfile_path = keyfile_path.toUtf8().toStdString();
+        in_path = in.toStdString();
+        output_dir = out.toStdString();
+        password = pwd.toStdString();
+        keyfile_path = kf.toStdString();
+        ext_behavior_v = ext_beh;
+        ext_overwrite_v = ext_ow;
     }
     void crypto_worker::run()
     {
@@ -306,34 +312,71 @@ namespace pk::ui::worker
                     }
                 }
                 emit current_ac0("Scanning " + QString::number(entries.size()) + " files...");
-                pk::crypto::format::pack_archive(
-                    entries,
-                    output_path,
-                    final_password,
-                    algo,
-                    __kdf_cfg,
-                    __cp_metadata,
-                    cmp_algo,
-                    cmp_lvl,
-                    static_cast<std::size_t>(cs_mbs) * 1024 * 1024,
-                    cb,
-                    status_cb);
+                pk::crypto::format::pack_archive(entries, output_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb);
                 pk::core::logger::log("worker successfully packed archive.");
             }
             else if (__mode == mode::unpack)
             {
                 pk::core::logger::log("starting archive unpack...");
                 emit current_ac0("Reading archive...");
-                pk::crypto::format::unpack_archive(in_path, output_dir, final_password, cb, []() -> bool
-                                                   {
-                                                       bool proceed = false;
-                                                       QMetaObject::invokeMethod(
-                                                           qApp, [&proceed]()
-                                                           { 
-                                                               pk::ui::sfx::play_info();
-                                                               proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
-                                                           Qt::BlockingQueuedConnection);
-                                                       return proceed; }, status_cb);
+                int remembered_choice = -1;
+                pk::crypto::format::unpack_archive(
+                    in_path, output_dir, final_password, ext_behavior_v, ext_overwrite_v,
+                    [&remembered_choice](const std::string &file_path) -> int
+                    {
+                        if (remembered_choice != -1)
+                        {
+                            return remembered_choice;
+                        }
+                        int choice = 0;
+                        QMetaObject::invokeMethod(
+                            qApp, [&choice, &remembered_choice, file_path]()
+                            {
+                                pk::ui::sfx::play_info();
+                                QMessageBox msgBox;
+                                msgBox.setWindowTitle("File Conflict");
+                                msgBox.setText(QString("The file already exists:\n%1\n\nWhat would you like to do?").arg(QString::fromStdString(file_path)));
+                                QPushButton *btnOver = msgBox.addButton("Overwrite", QMessageBox::ActionRole);
+                                QPushButton *btnOverAll = msgBox.addButton("Overwrite all", QMessageBox::ActionRole);
+                                QPushButton *btnSkip = msgBox.addButton("Skip", QMessageBox::ActionRole);
+                                QPushButton *btnSkipAll = msgBox.addButton("Skip all", QMessageBox::ActionRole);
+                                QPushButton *btnCancel = msgBox.addButton("Cancel", QMessageBox::RejectRole);
+                                msgBox.exec();
+                                if (msgBox.clickedButton() == btnOver)
+                                {
+                                    choice = 2;
+                                }
+                                else if (msgBox.clickedButton() == btnOverAll)
+                                {
+                                    choice = 2;
+                                    remembered_choice = 2;
+                                }
+                                else if (msgBox.clickedButton() == btnSkip)
+                                {
+                                    choice = 1;
+                                }
+                                else if (msgBox.clickedButton() == btnSkipAll)
+                                {
+                                    choice = 1;
+                                    remembered_choice = 1;
+                                }
+                                else
+                                {
+                                    choice = 0;
+                                } },
+                            Qt::BlockingQueuedConnection);
+                        return choice;
+                    },
+                    cb, []() -> bool
+                    {
+                        bool proceed = false;
+                        QMetaObject::invokeMethod(
+                            qApp, [&proceed]()
+                            { 
+                                pk::ui::sfx::play_info();
+                                proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
+                            Qt::BlockingQueuedConnection);
+                        return proceed; }, status_cb);
                 pk::core::logger::log("worker successfully unpacked archive.");
             }
             emit success();
