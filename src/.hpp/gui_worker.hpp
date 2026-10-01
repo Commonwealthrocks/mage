@@ -36,7 +36,9 @@ namespace pk::ui::worker
             const QString &in_path,
             const QString &out_dir,
             const QString &password,
-            const QString &keyfile_path);
+            const QString &keyfile_path,
+            int ext_behavior = 0,
+            int ext_overwrite = 0);
     signals:
         void success();
         void error(const QString &message);
@@ -63,6 +65,8 @@ namespace pk::ui::worker
         int cs_mbs;
         std::string in_path;
         std::string output_dir;
+        int ext_behavior_v;
+        int ext_overwrite_v;
     };
 }
 
