@@ -148,6 +148,9 @@ namespace pk::ui::outs
         QLineEdit *output_dir_;
         QLineEdit *password_v;
         QLineEdit *keyfile_path_v;
+        QComboBox *ext_behavior;
+        QCheckBox *ext_open;
+        QComboBox *ext_overwrite;
     };
     class cd_settings : public QDialog
     {
@@ -176,6 +179,9 @@ namespace pk::ui::outs
         QCheckBox *cmp_use_raw;
         QSpinBox *_cmp_raw_lvl;
         QSpinBox *chunk_size_used;
+        QComboBox *ext_behavior;
+        QCheckBox *ext_open;
+        QComboBox *ext_overwrite;
     };
 }
 
