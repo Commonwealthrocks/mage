@@ -41,6 +41,12 @@ namespace pk::cfg
         void ss_def_cmp_raw(int raw) { def_cmp_raw = raw; }
         bool ss_raw_cmp() const { return __use_raw_cmp; }
         void ss_def_use_raw_cmp(bool use_raw) { __use_raw_cmp = use_raw; }
+        int def_ext_behavior() const { return def_ext_behavior_v; }
+        void ss_def_ext_behavior(int behavior) { def_ext_behavior_v = behavior; }
+        bool def_ext_open() const { return def_ext_open_v; }
+        void ss_def_ext_open(bool open) { def_ext_open_v = open; }
+        int def_ext_overwrite() const { return def_ext_overwrite_v; }
+        void ss_def_ext_overwrite(int ow) { def_ext_overwrite_v = ow; }
 
     private:
         settings();
@@ -61,6 +67,9 @@ namespace pk::cfg
         int def_cmp_preset_v;
         int def_cmp_raw;
         bool __use_raw_cmp;
+        int def_ext_behavior_v;
+        bool def_ext_open_v;
+        int def_ext_overwrite_v;
     };
 }
 
