@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 08/09/2026
+// last updated: 01/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -52,6 +52,8 @@
 #include <QTextStream>
 #include <QCoreApplication>
 #include "../.hpp/cm.hpp"
+#include <QDesktopServices>
+#include <QUrl>
 namespace pk::ui::outs
 {
     static QMap<QString, QString> parse_tooltips(const QString &file_path)
@@ -899,7 +901,7 @@ namespace pk::ui::outs
     {
         setWindowTitle("Decrypt archive");
         setWindowFlags(windowFlags() | Qt::Window);
-        setFixedSize(500, 420);
+        setFixedSize(500, 520);
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
@@ -992,6 +994,26 @@ namespace pk::ui::outs
                 {
             QString path = QFileDialog::getOpenFileName(this, "Select keyfile", "", "MAGE keyfiles (*.mgkx) ;; All files (*)");
             if (!path.isEmpty()) keyfile_path_v->setText(path); });
+
+        QString tooltips_path = QCoreApplication::applicationDirPath() + "/assets/txt_data/tooltips";
+        QMap<QString, QString> tooltips = parse_tooltips(tooltips_path);
+        ext_behavior = new QComboBox(this);
+        ext_behavior->addItems({"Create archive folder", "Extract here (flat)", "Smart-ish extract"});
+        ext_behavior->setCurrentIndex(pk::cfg::settings::instance().def_ext_behavior());
+        if (tooltips.contains("extraction_behavior"))
+            ext_behavior->setToolTip(tooltips["extraction_behavior"]);
+        ext_overwrite = new QComboBox(this);
+        ext_overwrite->addItems({"Ask", "Skip", "Overwrite"});
+        ext_overwrite->setCurrentIndex(pk::cfg::settings::instance().def_ext_overwrite());
+        if (tooltips.contains("overwrite_rules"))
+            ext_overwrite->setToolTip(tooltips["overwrite_rules"]);
+        ext_open = new QCheckBox("Auto-open output folder", this);
+        ext_open->setChecked(pk::cfg::settings::instance().def_ext_open());
+        if (tooltips.contains("auto_open_output"))
+            ext_open->setToolTip(tooltips["auto_open_output"]);
+        form->addRow("Behavior:", ext_behavior);
+        form->addRow("Conflict rule:", ext_overwrite);
+        form->addRow("", ext_open);
         main_layout->addLayout(form);
         main_layout->addStretch();
         QHBoxLayout *action_layout = new QHBoxLayout();
@@ -1084,7 +1106,7 @@ namespace pk::ui::outs
             QString archive_path = archive_list->item(i)->text();
             QString base_name = QFileInfo(archive_path).completeBaseName();
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
-            w->ss_def_unpk_params(archive_path, base_out, password_v->text(), keyfile_path_v->text());
+            w->ss_def_unpk_params(archive_path, base_out, password_v->text(), keyfile_path_v->text(), ext_behavior->currentIndex(), ext_overwrite->currentIndex());
             progress_dialog pd(w, this);
             if (pd.exec() == QDialog::Accepted)
             {
@@ -1108,13 +1130,26 @@ namespace pk::ui::outs
                 summary += QString("  \u2022 %1: %2\n").arg(failed_names[i]).arg(failed_reasons[i]);
         }
         if (failed_names.isEmpty())
+        {
             info(this, "Done", summary);
+        }
         else if (succeeded.isEmpty())
+        {
             error(this, "All failed", summary);
+        }
         else
+        {
             warning(this, "Partially done", summary);
+        }
+
         if (!succeeded.isEmpty())
+        {
+            if (ext_open->isChecked())
+            {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(base_out));
+            }
             accept();
+        }
     }
     void cd_decrypt_archive::on_cancel()
     {
@@ -1239,6 +1274,27 @@ namespace pk::ui::outs
             QObject::connect(anim, &QPropertyAnimation::finished, w, &QLabel::close); });
         layout_gen->addStretch();
         tabs->addTab(tab_gen, "General");
+
+        QWidget *tab_ext = new QWidget();
+        QFormLayout *form_ext = new QFormLayout(tab_ext);
+        ext_behavior = new QComboBox(this);
+        ext_behavior->addItems({"Create archive folder", "Extract here (flat)", "Smart-ish extract"});
+        ext_behavior->setCurrentIndex(pk::cfg::settings::instance().def_ext_behavior());
+        if (tooltips.contains("extraction_behavior"))
+            ext_behavior->setToolTip(tooltips["extraction_behavior"]);
+        form_ext->addRow("Behavior:", ext_behavior);
+        ext_open = new QCheckBox("Auto-open output folder", this);
+        ext_open->setChecked(pk::cfg::settings::instance().def_ext_open());
+        if (tooltips.contains("auto_open_output"))
+            ext_open->setToolTip(tooltips["auto_open_output"]);
+        form_ext->addRow("", ext_open);
+        ext_overwrite = new QComboBox(this);
+        ext_overwrite->addItems({"Ask", "Skip", "Overwrite"});
+        ext_overwrite->setCurrentIndex(pk::cfg::settings::instance().def_ext_overwrite());
+        if (tooltips.contains("overwrite_rules"))
+            ext_overwrite->setToolTip(tooltips["overwrite_rules"]);
+        form_ext->addRow("Conflict rule:", ext_overwrite);
+        tabs->addTab(tab_ext, "Extraction");
         QWidget *tab_enc = new QWidget();
         QFormLayout *form_enc = new QFormLayout(tab_enc);
         algo_combo = new QComboBox(this);
@@ -1437,6 +1493,9 @@ namespace pk::ui::outs
         s.ss_def_cmp_preset(cmp_preset_combo->currentIndex());
         s.ss_def_cmp_raw(_cmp_raw_lvl->value());
         s.ss_def_use_raw_cmp(cmp_use_raw->isChecked());
+        s.ss_def_ext_behavior(ext_behavior->currentIndex());
+        s.ss_def_ext_open(ext_open->isChecked());
+        s.ss_def_ext_overwrite(ext_overwrite->currentIndex());
         s.save();
         info(this, "Success", "Settings successfully saved.");
     }
@@ -1459,7 +1518,7 @@ namespace pk::ui::outs
         line1->setFrameShadow(QFrame::Sunken);
         layout->addWidget(line1);
         QLabel *lbl_info = new QLabel(
-            "Version: v0.5a\n"
+            "Version: v0.6a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
             "Made by: Common, just Common.\n"
             "Audited by: no one. ",
