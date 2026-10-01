@@ -1,11 +1,18 @@
 // path_handler.cpp
-// last updated: 17/06/2026
+// last updated: 02/10/2026
 #include "../.hpp/path_handler.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <sstream>
 #include <vector>
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+// bars?
+#endif
+#include <windows.h>
+#endif
 namespace pk::path
 {
     namespace
@@ -313,13 +320,7 @@ namespace pk::path
             {
                 continue;
             }
-            bool is_symlink = std::filesystem::is_symlink(current, fs_error);
-            if (fs_error)
-            {
-                return validation_error::symlink_escape;
-            }
-
-            if (is_symlink)
+            if (is_symlink_or_other_thingy_whatever(current, fs_error))
             {
                 return validation_error::symlink_escape;
             }
@@ -353,6 +354,23 @@ namespace pk::path
         }
         out_absolute_path = std::move(candidate);
         return validation_error::none;
+    }
+    bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p, std::error_code &ec) noexcept
+    {
+        ec.clear();
+        if (std::filesystem::is_symlink(p, ec) || ec)
+            return true;
+#ifdef _WIN32
+        DWORD attrs = GetFileAttributesW(p.wstring().c_str());
+        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT))
+            return true;
+#endif
+        return false;
+    }
+    bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p) noexcept
+    {
+        std::error_code ec;
+        return is_symlink_or_other_thingy_whatever(p, ec);
     }
 }
 
