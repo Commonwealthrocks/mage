@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 01/10/2026
+// last updated: 02/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -245,7 +245,6 @@ namespace pk::crypto::format
     {
         uint64_t total_bytes = std::filesystem::file_size(in_path);
         uint64_t processed_bytes = 0;
-
         std::ifstream in(in_path, std::ios::binary);
         if (!in)
             throw std::runtime_error("failed to open input file");
@@ -256,17 +255,21 @@ namespace pk::crypto::format
             throw std::runtime_error("invalid magic bytes");
         if (header.version != 1)
             throw std::runtime_error("unsupported archive version");
+        if (header.algo > static_cast<uint8_t>(cipher::algorithm::aes_256_siv))
+            throw std::runtime_error("corrupted or malicious archive -> unknown cipher algorithm");
+        if (header.compression_algo > 2)
+            throw std::runtime_error("corrupted or malicious archive -> unknown compression algorithm");
         bool has_meta = (header.has_metadata == 1);
         pk::crypto::kdf::kdf_cfg kdf_cfg{};
         kdf_cfg.memory_cost_kb = header.memory_cost_kb;
-        if (kdf_cfg.memory_cost_kb < 1024 || kdf_cfg.memory_cost_kb > 4194304)
-            throw std::runtime_error("corrupted archive -> invalid mem_ cost");
+        if (kdf_cfg.memory_cost_kb < 1024 || kdf_cfg.memory_cost_kb > 2097152)
+            throw std::runtime_error("corrupted or malicious archive -> excessive memory cost (limit: 2 GB)");
         kdf_cfg.time_cost = header.time_cost;
-        if (kdf_cfg.time_cost < 1 || kdf_cfg.time_cost > 255)
-            throw std::runtime_error("corrupted archive -> invalid time cost");
+        if (kdf_cfg.time_cost < 1 || kdf_cfg.time_cost > 32)
+            throw std::runtime_error("corrupted or malicious archive -> excessive time cost (limit: 32)");
         kdf_cfg.parallelism = header.parallelism;
-        if (kdf_cfg.parallelism < 1 || kdf_cfg.parallelism > 64)
-            throw std::runtime_error("corrupted archive -> invalid parallelism");
+        if (kdf_cfg.parallelism < 1 || kdf_cfg.parallelism > 32)
+            throw std::runtime_error("corrupted or malicious archive -> invalid parallelism");
         kdf_cfg.hash_length = (header.algo == static_cast<uint8_t>(cipher::algorithm::aes_256_siv)) ? 64 : 32;
         if (status_cb)
             status_cb("deriving encryption key...");
@@ -424,7 +427,6 @@ namespace pk::crypto::format
                     continue;
                 }
             }
-
             if (!pk::path::ok(pk::path::validate_archive_path(rel_path, norm_path)))
             {
                 throw std::runtime_error("Invalid or malicious path in archive: " + rel_path);
@@ -440,6 +442,10 @@ namespace pk::crypto::format
             }
             if (is_dir)
             {
+                if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
+                {
+                    throw std::runtime_error("security error -> cannot create directory because a symlink or reparse point exists: " + rel_path);
+                }
                 if (std::filesystem::exists(target_path) && !std::filesystem::is_directory(target_path))
                 {
                     throw std::runtime_error("path conflict -> cannot create directory '" + rel_path + "' because a file with the same name exists.");
@@ -454,13 +460,11 @@ namespace pk::crypto::format
                     {
                         throw std::runtime_error("path conflict -> cannot create file '" + rel_path + "' because a directory with the same name exists.");
                     }
-
                     int action = ext_overwrite;
                     if (action == 0 && overwrite_ask_cb)
                     {
                         action = overwrite_ask_cb(target_path.string());
                     }
-
                     if (action == 0) // Cancel
                     {
                         throw std::runtime_error("extraction cancelled by user due to file conflict.");
@@ -478,11 +482,25 @@ namespace pk::crypto::format
                         continue;
                     }
                 }
-
+                if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
+                {
+                    throw std::runtime_error("security error -> target file is a symlink or reparse point; " + rel_path);
+                }
                 std::filesystem::create_directories(target_path.parent_path());
+                if (pk::path::is_symlink_or_other_thingy_whatever(target_path.parent_path()))
+                {
+                    throw std::runtime_error("security error -> parent directory is a symlink or reparse point; " + rel_path);
+                }
                 std::ofstream out(target_path, std::ios::binary | std::ios::trunc);
                 if (!out)
                     throw std::runtime_error("failed to create output file: " + target_path.string());
+                if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
+                {
+                    out.close();
+                    std::error_code ec_rm;
+                    std::filesystem::remove(target_path, ec_rm);
+                    throw std::runtime_error("security error -> target file is a symlink or reparse point after open; " + rel_path);
+                }
                 out.exceptions(std::ios::failbit | std::ios::badbit);
                 uint64_t remaining = file_size;
                 std::vector<char> write_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
