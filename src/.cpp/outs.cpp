@@ -56,6 +56,40 @@
 #include <QUrl>
 namespace pk::ui::outs
 {
+    static QString sexify_tooltip(const QString &raw)
+    {
+        QStringList lines = raw.trimmed().split('\n');
+        if (lines.isEmpty())
+            return raw;
+
+        QString title = lines[0].trimmed();
+        QString body;
+        for (int i = 1; i < lines.size(); ++i)
+        {
+            QString l = lines[i].trimmed();
+            if (l.isEmpty())
+            {
+                if (!body.isEmpty() && !body.endsWith("<br><br>"))
+                    body += "<br><br>";
+            }
+            else
+            {
+                if (!body.isEmpty() && !body.endsWith("<br><br>"))
+                    body += " ";
+                body += l.toHtmlEscaped();
+            }
+        }
+        if (body.isEmpty())
+        {
+            return QString("<div style='max-width: 340px;'><b style='color: #ffffff;'>%1</b></div>").arg(title.toHtmlEscaped());
+        }
+        return QString("<div style='max-width: 340px;'>"
+                       "<b style='color: #ffffff;'>%1</b><br><br>"
+                       "<span style='color: #d0d0d0;'>%2</span>"
+                       "</div>")
+            .arg(title.toHtmlEscaped(), body);
+    }
+
     static QMap<QString, QString> parse_tooltips(const QString &file_path)
     {
         QMap<QString, QString> tooltips;
@@ -74,18 +108,33 @@ namespace pk::ui::outs
                 line = line.trimmed();
                 if (line.isEmpty() || line.startsWith("##"))
                     continue;
-                if (line.endsWith("=\"\"\""))
+                if (line.endsWith("\"\"\""))
                 {
-                    current_key = line.left(line.length() - 4).trimmed();
-                    in_value = true;
-                    current_text.clear();
+                    int eq_pos = line.indexOf('=');
+                    if (eq_pos != -1)
+                    {
+                        int first_quote = line.indexOf("\"\"\"");
+                        int last_quote = line.lastIndexOf("\"\"\"");
+                        QString key = line.left(eq_pos).trimmed();
+                        if (first_quote != last_quote && first_quote != -1)
+                        {
+                            QString raw = line.mid(first_quote + 3, last_quote - first_quote - 3).trimmed();
+                            tooltips[key] = sexify_tooltip(raw);
+                        }
+                        else
+                        {
+                            current_key = key;
+                            in_value = true;
+                            current_text.clear();
+                        }
+                    }
                 }
             }
             else
             {
                 if (line.trimmed() == "\"\"\"")
                 {
-                    tooltips[current_key] = current_text.trimmed();
+                    tooltips[current_key] = sexify_tooltip(current_text);
                     in_value = false;
                 }
                 else
