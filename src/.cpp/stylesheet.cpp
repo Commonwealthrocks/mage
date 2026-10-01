@@ -1,5 +1,5 @@
 // stylesheet.cpp
-// last updated: 03/08/2026
+// last updated: 02/10/2026
 // fuck css
 #include "../.hpp/stylesheet.hpp"
 namespace pk::ui::style
@@ -11,10 +11,11 @@ namespace pk::ui::style
                 outline: none;
             }
             QToolTip {
-                background-color: #f0f0f0;
-                color: #000000;
-                border: 1px solid #767676;
-                padding: 2px;
+                background-color: #2b2b2b;
+                color: #e0e0e0;
+                border: 1px solid #555555;
+                padding: 6px;
+                border-radius: 4px;
             }
             QWidget {
                 background-color: #202020;
