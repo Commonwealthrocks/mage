@@ -1,5 +1,5 @@
 // path_handler.cpp
-// last updated: 17/06/2026
+// last updated: 02/10/2026
 #pragma once
 #include <string>
 #include <string_view>
@@ -50,6 +50,8 @@ namespace pk::path
         std::string_view norm_archive_path,
         std::filesystem::path &out_absolute_path,
         std::error_code &fs_error);
+    [[nodiscard]] bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p, std::error_code &ec) noexcept;
+    [[nodiscard]] bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p) noexcept;
     [[nodiscard]] bool reserved_name(std::string_view segment) noexcept;
 }
 
