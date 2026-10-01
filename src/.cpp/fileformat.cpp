@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 29/08/2026
+// last updated: 01/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -236,6 +236,9 @@ namespace pk::crypto::format
         const std::filesystem::path &in_path,
         const std::filesystem::path &out_dir,
         std::string_view password,
+        int ext_behavior,
+        int ext_overwrite,
+        std::function<int(const std::string &)> overwrite_ask_cb,
         std::function<void(uint64_t, uint64_t, const std::string &)> progress_cb,
         std::function<bool()> zipbomb_cb,
         std::function<void(const std::string &)> status_cb)
@@ -385,7 +388,7 @@ namespace pk::crypto::format
             aoz += file_size;
             if (aoz > total_origin_size)
             {
-                throw std::runtime_error("archive corruption or zipbomb bypass: entries size exceeds declared total size");
+                throw std::runtime_error("archive corruption or zipbomb bypass; entries size exceeds declared total size");
             }
             uint64_t ctime = 0, atime = 0, mtime = 0;
             uint32_t attrs = 0;
@@ -399,6 +402,29 @@ namespace pk::crypto::format
             std::filesystem::path target_path;
             std::error_code fs_error;
             std::string norm_path;
+            if (ext_behavior == 1)
+            {
+                std::size_t pos = rel_path.find('/');
+                if (pos == std::string::npos)
+                    pos = rel_path.find('\\');
+                if (pos != std::string::npos)
+                {
+                    if (pos == rel_path.length() - 1)
+                    {
+                        continue;
+                    }
+                    rel_path = rel_path.substr(pos + 1);
+                }
+                else if (is_dir)
+                {
+                    continue;
+                }
+                if (rel_path.empty())
+                {
+                    continue;
+                }
+            }
+
             if (!pk::path::ok(pk::path::validate_archive_path(rel_path, norm_path)))
             {
                 throw std::runtime_error("Invalid or malicious path in archive: " + rel_path);
@@ -422,10 +448,37 @@ namespace pk::crypto::format
             }
             else
             {
-                if (std::filesystem::exists(target_path) && std::filesystem::is_directory(target_path))
+                if (std::filesystem::exists(target_path))
                 {
-                    throw std::runtime_error("path conflict -> cannot create file '" + rel_path + "' because a directory with the same name exists.");
+                    if (std::filesystem::is_directory(target_path))
+                    {
+                        throw std::runtime_error("path conflict -> cannot create file '" + rel_path + "' because a directory with the same name exists.");
+                    }
+
+                    int action = ext_overwrite;
+                    if (action == 0 && overwrite_ask_cb)
+                    {
+                        action = overwrite_ask_cb(target_path.string());
+                    }
+
+                    if (action == 0) // Cancel
+                    {
+                        throw std::runtime_error("extraction cancelled by user due to file conflict.");
+                    }
+                    else if (action == 1) // Skip
+                    {
+                        uint64_t remaining = file_size;
+                        std::vector<char> dummy(std::min(chunk_size, std::size_t(1024 * 1024)));
+                        while (remaining > 0)
+                        {
+                            std::size_t to_read = static_cast<std::size_t>(std::min<uint64_t>(remaining, dummy.size()));
+                            read_from_stream(dummy.data(), to_read);
+                            remaining -= to_read;
+                        }
+                        continue;
+                    }
                 }
+
                 std::filesystem::create_directories(target_path.parent_path());
                 std::ofstream out(target_path, std::ios::binary | std::ios::trunc);
                 if (!out)
@@ -485,6 +538,33 @@ namespace pk::crypto::format
                 }
             }
 #endif
+        }
+        if (ext_behavior == 2)
+        {
+            std::filesystem::path archive_stem = in_path.stem();
+            std::filesystem::path wrapper_dir = out_dir / archive_stem;
+            std::error_code ec;
+            if (std::filesystem::exists(wrapper_dir, ec) && std::filesystem::is_directory(wrapper_dir, ec))
+            {
+                std::vector<std::filesystem::directory_entry> sub_items;
+                for (const auto &dir_entry : std::filesystem::directory_iterator(wrapper_dir, ec))
+                {
+                    sub_items.push_back(dir_entry);
+                }
+                if (sub_items.size() == 1 && sub_items[0].is_directory(ec))
+                {
+                    std::filesystem::path single_dir = sub_items[0].path();
+                    std::filesystem::path dest_dir = out_dir / single_dir.filename();
+                    if (!std::filesystem::exists(dest_dir, ec))
+                    {
+                        std::filesystem::rename(single_dir, dest_dir, ec);
+                        if (!ec)
+                        {
+                            std::filesystem::remove(wrapper_dir, ec);
+                        }
+                    }
+                }
+            }
         }
     }
 }
