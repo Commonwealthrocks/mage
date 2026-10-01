@@ -34,6 +34,9 @@ namespace pk::cfg
         def_cmp_preset_v = 1;
         def_cmp_raw = 3;
         __use_raw_cmp = false;
+        def_ext_behavior_v = 0;
+        def_ext_open_v = false;
+        def_ext_overwrite_v = 0;
         load();
     }
     QString settings::settings_path() const
@@ -139,6 +142,12 @@ namespace pk::cfg
             def_cmp_raw = std::clamp(obj["def_cmp_lvl"].toInt(), 0, 22);
         if (obj.contains("ss_raw_cmp"))
             __use_raw_cmp = obj["ss_raw_cmp"].toBool();
+        if (obj.contains("def_ext_behavior"))
+            def_ext_behavior_v = std::clamp(obj["def_ext_behavior"].toInt(), 0, 2);
+        if (obj.contains("def_ext_open"))
+            def_ext_open_v = obj["def_ext_open"].toBool();
+        if (obj.contains("def_ext_overwrite"))
+            def_ext_overwrite_v = std::clamp(obj["def_ext_overwrite"].toInt(), 0, 2);
     }
     void settings::save() const
     {
@@ -158,6 +167,9 @@ namespace pk::cfg
         obj["def_cmp_preset"] = def_cmp_preset_v;
         obj["def_cmp_lvl"] = def_cmp_raw;
         obj["ss_raw_cmp"] = __use_raw_cmp;
+        obj["def_ext_behavior"] = def_ext_behavior_v;
+        obj["def_ext_open"] = def_ext_open_v;
+        obj["def_ext_overwrite"] = def_ext_overwrite_v;
         QJsonDocument doc(obj);
         QByteArray plain_json = doc.toJson(QJsonDocument::Compact);
         auto nonce_res = pk::crypto::kdf::mk_salt(24);
