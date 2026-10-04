@@ -5,6 +5,7 @@
 #include "../.hpp/path_handler.hpp"
 #include "../.hpp/compression.hpp"
 #include "../.hpp/logger.hpp"
+#include "../.hpp/secure_memory.hpp"
 #include <fstream>
 #include <chrono>
 #include <cstring>
@@ -274,7 +275,11 @@ namespace pk::crypto::am_i_evil
 
         return rep;
     }
-    verification_report verify_archive(const std::filesystem::path &archive_path, std::string_view password, std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb)
+    verification_report verify_archive(
+        const std::filesystem::path &archive_path,
+        std::string_view password,
+        std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb,
+        std::function<bool()> cancel_cb)
     {
         verification_report rep;
         rep.header = view_header(archive_path);
@@ -321,6 +326,8 @@ namespace pk::crypto::am_i_evil
         std::ifstream in(archive_path, std::ios::binary);
         if (!in)
         {
+            pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+            key_res.first.clear();
             rep.verdict = __vv_::io_error;
             rep.error_details = "Could not open archive for decryption.";
             return rep;
@@ -329,11 +336,15 @@ namespace pk::crypto::am_i_evil
         in.read(reinterpret_cast<char *>(&header), sizeof(header));
         auto cipher = cipher::mk_cipher(static_cast<cipher::algorithm>(rep.header.algo_id));
         cipher->init(key_res.first.data(), key_res.first.size());
+        // Securely wipe master key material from RAM immediately after cipher initialization
+        pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+        key_res.first.clear();
+
         const std::size_t chunk_size = rep.header.chunk_size;
         const std::size_t block_size = chunk_size + cipher->what_mac_size();
         std::vector<uint8_t> buffer(block_size);
         uint64_t chunk_index = 0;
-        std::vector<uint8_t> plaintext_stream;
+        pk::mem_::secure_vector plaintext_stream;
         std::size_t plaintext_pos = 0;
         const std::size_t nonce_size = cipher->nonce_size_abl();
         uint8_t current_nonce[24]{};
@@ -341,8 +352,26 @@ namespace pk::crypto::am_i_evil
         std::memcpy(ad.data(), &header, sizeof(header));
         auto decompressor = pk::crypto::cmp_e::mk_dmp_e(
             static_cast<pk::crypto::cmp_e::algorithm>(rep.header.compression_algo_id));
+
+        auto cleanup_sensitive = [&]()
+        {
+            if (!plaintext_stream.empty())
+            {
+                pk::mem_::secure_wipe(plaintext_stream.data(), plaintext_stream.size());
+                plaintext_stream.clear();
+            }
+            if (!buffer.empty())
+            {
+                pk::mem_::secure_wipe(buffer.data(), buffer.size());
+                buffer.clear();
+            }
+        };
+
         auto fetch_next_chunk = [&]()
         {
+            if (cancel_cb && cancel_cb())
+                throw std::runtime_error("verification cancelled by user.");
+
             in.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
             std::size_t bytes_read = in.gcount();
             if (bytes_read == 0)
@@ -361,8 +390,7 @@ namespace pk::crypto::am_i_evil
 
             try
             {
-                auto pt = cipher->decrypt_chunk(buffer.data(), bytes_read, ad.data(), ad.size(), current_nonce, nonce_size);
-                plaintext_stream.assign(pt.begin(), pt.end());
+                plaintext_stream = cipher->decrypt_chunk(buffer.data(), bytes_read, ad.data(), ad.size(), current_nonce, nonce_size);
                 plaintext_pos = 0;
                 chunk_index++;
                 rep.verified_chunks++;
@@ -433,6 +461,7 @@ namespace pk::crypto::am_i_evil
             {
                 rep.verdict = __vv_::zipbomb_warning;
                 rep.error_details = "uncompressed size (" + format_bytes(total_origin_size) + ") exceeds archive on disk size by >100x (perhaps zipbomb?).";
+                cleanup_sensitive();
                 return rep;
             }
             uint32_t num_entries = 0;
@@ -441,11 +470,24 @@ namespace pk::crypto::am_i_evil
             {
                 rep.verdict = __vv_::stream_corrupted;
                 rep.error_details = "excessive entry count declared (" + std::to_string(num_entries) + "); archive is invalid.";
+                cleanup_sensitive();
                 return rep;
             }
             rep.total_entries = num_entries;
             uint64_t accumulated_origin_bytes = 0;
             std::vector<char> discard_buf(1024 * 1024);
+            struct buf_cleaner
+            {
+                std::vector<char> &buf;
+                ~buf_cleaner()
+                {
+                    if (!buf.empty())
+                    {
+                        pk::mem_::secure_wipe(buf.data(), buf.size());
+                    }
+                }
+            } cleaner{discard_buf};
+
             for (uint32_t i = 0; i < num_entries; ++i)
             {
                 uint16_t path_len = 0;
@@ -457,6 +499,7 @@ namespace pk::crypto::am_i_evil
                 {
                     rep.verdict = __vv_::traversal_attack;
                     rep.error_details = "malicious or illegal relative path detected: " + rel_path;
+                    cleanup_sensitive();
                     return rep;
                 }
                 if (rep.entry_sample.size() < 10)
@@ -480,6 +523,7 @@ namespace pk::crypto::am_i_evil
                 {
                     rep.verdict = __vv_::stream_corrupted;
                     rep.error_details = "sum of entry file sizes exceeds declared total origin size.";
+                    cleanup_sensitive();
                     return rep;
                 }
                 if (rep.header.has_metadata)
@@ -496,6 +540,8 @@ namespace pk::crypto::am_i_evil
                     uint64_t rem = file_size;
                     while (rem > 0)
                     {
+                        if (cancel_cb && cancel_cb())
+                            throw std::runtime_error("verification cancelled by user.");
                         std::size_t to_drain = static_cast<std::size_t>(std::min<uint64_t>(rem, discard_buf.size()));
                         read_from_stream(discard_buf.data(), to_drain);
                         rem -= to_drain;
@@ -525,6 +571,7 @@ namespace pk::crypto::am_i_evil
             }
         }
 
+        cleanup_sensitive();
         return rep;
     }
     std::string mk_export_log(const std::vector<verification_report> &reports)
