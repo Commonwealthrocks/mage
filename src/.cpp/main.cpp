@@ -45,9 +45,33 @@ protected:
             bool shift = (wheelEvent->modifiers() & Qt::ShiftModifier) || (QApplication::keyboardModifiers() & Qt::ShiftModifier);
             bool right_click = (wheelEvent->buttons() & Qt::RightButton) || (QApplication::mouseButtons() & Qt::RightButton);
 
+            QTabBar *tabBar = qobject_cast<QTabBar *>(obj);
+            if (!tabBar && obj && obj->parent())
+            {
+                tabBar = qobject_cast<QTabBar *>(obj->parent());
+            }
+            if (tabBar)
+            {
+                int delta = wheelEvent->angleDelta().y();
+                if (delta == 0)
+                    delta = wheelEvent->angleDelta().x();
+                if (delta != 0)
+                {
+                    int count = tabBar->count();
+                    if (count > 1)
+                    {
+                        int cur = tabBar->currentIndex();
+                        int next = cur + (delta < 0 ? 1 : -1);
+                        next = qBound(0, next, count - 1);
+                        if (next != cur)
+                            tabBar->setCurrentIndex(next);
+                    }
+                    return true;
+                }
+            }
+
             if (qobject_cast<QComboBox *>(obj) ||
                 qobject_cast<QAbstractSpinBox *>(obj) ||
-                qobject_cast<QTabBar *>(obj) ||
                 qobject_cast<QSlider *>(obj))
             {
                 if (!shift && !right_click)
