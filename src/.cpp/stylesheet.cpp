@@ -125,6 +125,20 @@ namespace pk::ui::style
                 border-bottom-color: #202020;
                 font-weight: bold;
             }
+            QTabBar::scroller {
+                width: 0px;
+                height: 0px;
+            }
+            QTabBar QToolButton {
+                width: 0px;
+                height: 0px;
+                max-width: 0px;
+                max-height: 0px;
+                padding: 0px;
+                margin: 0px;
+                border: none;
+                background: transparent;
+            }
             QCheckBox {
                 color: #e0e0e0;
             }
