@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 09/09/2026
+// last updated: 04/10/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -28,13 +28,15 @@ namespace pk::ui
         : QMainWindow(parent)
     {
         setWindowTitle("MAGE - Make actually good encryption!"); // this title is cutoff; oh well
-        setFixedSize(300, 300);
+        setFixedSize(300, 330);
         setup_ui();
         dark_theme();
         connect(ipc, &pk::ipc::ipc_server::rq_enc, this, [this](const QString &path)
                 { this->handle_args("encrypt", path); });
         connect(ipc, &pk::ipc::ipc_server::rq_dec, this, [this](const QString &path)
                 { this->handle_args("decrypt", path); });
+        connect(ipc, &pk::ipc::ipc_server::rq_ver, this, [this](const QString &path)
+                { this->handle_args("verify", path); });
 #ifdef _WIN32
         BOOL dark = TRUE;
         DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 20, &dark, sizeof(dark));
@@ -65,6 +67,7 @@ namespace pk::ui
         QMenu *mode_menu = menu_bar->addMenu("Mode");
         QAction *action_create = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "Make archive (encryption)");
         QAction *action_decrypt = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "Decrypt archive");
+        QAction *action_verify = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), "Verify archive (integrity)");
         QMenu *action_menu = menu_bar->addMenu("Action");
         QAction *action_settings = action_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/settings.svg")), "Settings");
         QAction *action_quit = action_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/quit.svg")), "Quit");
@@ -73,6 +76,7 @@ namespace pk::ui
         QAction *action_about = help_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/about.svg")), "About MAGE");
         connect(action_create, &QAction::triggered, this, &gui::on_create_archive_clicked);
         connect(action_decrypt, &QAction::triggered, this, &gui::on_decrypt_archive_clicked);
+        connect(action_verify, &QAction::triggered, this, &gui::on_verify_archive_clicked);
         connect(action_settings, &QAction::triggered, this, &gui::on_settings_clicked);
         connect(action_quit, &QAction::triggered, qApp, &QApplication::quit);
         connect(action_keybinds, &QAction::triggered, this, &gui::on_keybinds_clicked);
@@ -82,15 +86,20 @@ namespace pk::ui
         QVBoxLayout *layout = new QVBoxLayout(central);
         btn_mk = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "      Create archive", this);
         btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "      Decrypt archive", this);
+        btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), "      Verify archive", this);
         btn_mk->setFixedSize(200, 45);
         btn_decrypt->setFixedSize(200, 45);
+        btn_verify->setFixedSize(200, 45);
         layout->addStretch();
         layout->addWidget(btn_mk, 0, Qt::AlignCenter);
         layout->addSpacing(10);
         layout->addWidget(btn_decrypt, 0, Qt::AlignCenter);
+        layout->addSpacing(10);
+        layout->addWidget(btn_verify, 0, Qt::AlignCenter);
         layout->addStretch();
         connect(btn_mk, &QPushButton::clicked, this, &gui::on_create_archive_clicked);
         connect(btn_decrypt, &QPushButton::clicked, this, &gui::on_decrypt_archive_clicked);
+        connect(btn_verify, &QPushButton::clicked, this, &gui::on_verify_archive_clicked);
     }
     void gui::dark_theme()
     {
@@ -175,6 +184,33 @@ namespace pk::ui
                 m_decrypt_archive_dialog->activateWindow();
             }
         }
+        else if (mode == "verify")
+        {
+            if (m_verify_archive_dialog)
+            {
+                m_verify_archive_dialog->add_path(path);
+                m_verify_archive_dialog->show();
+                m_verify_archive_dialog->raise();
+                m_verify_archive_dialog->activateWindow();
+            }
+            else
+            {
+                m_verify_archive_dialog = new pk::ui::outs::cd_am_i_evil(nullptr, path);
+                m_verify_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+                connect(m_verify_archive_dialog, &QDialog::finished, this, [this, quit_on_close]()
+                        {
+                    m_verify_archive_dialog = nullptr;
+                    if (quit_on_close)
+                        qApp->quit();
+                    else {
+                        this->restoreGeometry(m_saved_geom);
+                        this->show();
+                    } });
+                m_verify_archive_dialog->show();
+                m_verify_archive_dialog->raise();
+                m_verify_archive_dialog->activateWindow();
+            }
+        }
     }
     void gui::on_decrypt_archive_clicked()
     {
@@ -194,6 +230,26 @@ namespace pk::ui
         else
         {
             m_decrypt_archive_dialog->activateWindow();
+        }
+    }
+    void gui::on_verify_archive_clicked()
+    {
+        m_saved_geom = this->saveGeometry();
+        this->hide();
+        if (!m_verify_archive_dialog)
+        {
+            m_verify_archive_dialog = new pk::ui::outs::cd_am_i_evil(nullptr);
+            m_verify_archive_dialog->setAttribute(Qt::WA_DeleteOnClose);
+            connect(m_verify_archive_dialog, &QDialog::finished, this, [this]()
+                    {
+                m_verify_archive_dialog = nullptr;
+                this->restoreGeometry(m_saved_geom);
+                this->show(); });
+            m_verify_archive_dialog->show();
+        }
+        else
+        {
+            m_verify_archive_dialog->activateWindow();
         }
     }
     void gui::on_settings_clicked()
