@@ -58,6 +58,8 @@
 #include "../.hpp/cm.hpp"
 #include <QDesktopServices>
 #include <QUrl>
+#include <unordered_set>
+#include "../.hpp/secure_memory.hpp"
 namespace pk::ui::outs
 {
     static QString sexify_tooltip(const QString &raw)
@@ -301,7 +303,10 @@ namespace pk::ui::outs
         btn_layout->addStretch();
         QPushButton *btn_cancel = new QPushButton("Cancel", this);
         connect(btn_cancel, &QPushButton::clicked, this, [this]()
-                { reject(); });
+                {
+                    if (m2_worker)
+                        m2_worker->requestInterruption();
+                    reject(); });
         btn_layout->addWidget(btn_cancel);
         layout->addLayout(btn_layout);
         timer = new QTimer(this);
@@ -1225,53 +1230,92 @@ namespace pk::ui::outs
     }
     void cd_am_i_evil::add_path(const QString &path)
     {
-        if (QFileInfo(path).isDir())
+        add_paths(QStringList{path});
+    }
+    void cd_am_i_evil::add_paths(const QStringList &paths)
+    {
+        if (paths.isEmpty())
             return;
-        QString canonical = QFileInfo(path).canonicalFilePath();
-        if (canonical.isEmpty())
-            canonical = QDir::cleanPath(path);
+
+        queue_tree->setUpdatesEnabled(false);
+
+        std::unordered_set<std::string> existing_paths;
+        existing_paths.reserve(m_reports.size() + paths.size());
         for (const auto &rep : m_reports)
         {
-            if (QString::fromStdString(rep.header.___filepath.string()) == canonical)
-                return;
+            existing_paths.insert(rep.header.___filepath.string());
         }
-        pk::crypto::am_i_evil::verification_report rep;
-        rep.header = pk::crypto::am_i_evil::view_header(canonical.toStdString());
-        rep.total_chunks = rep.header.est_chunks;
-        rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
-        // has the jury reached a verdict?
-        // hah i'm so unfunny
-        m_reports.push_back(rep);
-        QTreeWidgetItem *item = new QTreeWidgetItem(queue_tree);
-        item->setText(0, QFileInfo(canonical).fileName());
-        item->setToolTip(0, canonical);
-        if (!rep.header.file_exists)
+
+        QList<QTreeWidgetItem *> new_items;
+        new_items.reserve(paths.size());
+
+        bool was_empty = m_reports.empty();
+        QTreeWidgetItem *first_new_item = nullptr;
+
+        for (const QString &path : paths)
         {
-            item->setText(1, "INVALID");
-            item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
-            item->setForeground(1, QColor(0xff, 0x66, 0x66));
+            if (path.isEmpty() || QFileInfo(path).isDir())
+                continue;
+
+            QString canonical = QFileInfo(path).canonicalFilePath();
+            if (canonical.isEmpty())
+                canonical = QDir::cleanPath(path);
+
+            std::string canon_std = canonical.toStdString();
+            if (existing_paths.find(canon_std) != existing_paths.end())
+                continue;
+
+            existing_paths.insert(canon_std);
+
+            pk::crypto::am_i_evil::verification_report rep;
+            rep.header = pk::crypto::am_i_evil::view_header(canon_std);
+            rep.total_chunks = rep.header.est_chunks;
+            rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
+            m_reports.push_back(rep);
+
+            QTreeWidgetItem *item = new QTreeWidgetItem();
+            item->setText(0, QFileInfo(canonical).fileName());
+            item->setToolTip(0, canonical);
+            if (!rep.header.file_exists)
+            {
+                item->setText(1, "INVALID");
+                item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
+                item->setForeground(1, QColor(0xff, 0x66, 0x66));
+            }
+            else if (!rep.header.valid_magic || !rep.header.structure_ok || !rep.header.kdf_safe)
+            {
+                item->setText(1, "INVALID");
+                item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
+                item->setForeground(1, QColor(0xff, 0x66, 0x66));
+            }
+            else
+            {
+                item->setText(1, "OK");
+                item->setToolTip(1, "Container header and parameters valid");
+                item->setForeground(1, QColor(0x55, 0xff, 0x55));
+            }
+            item->setText(2, "PENDING");
+            item->setToolTip(2, "Awaiting credentials to verify AEAD integrity");
+            item->setForeground(2, QColor(0xaa, 0xaa, 0xaa));
+            item->setTextAlignment(1, Qt::AlignCenter);
+            item->setTextAlignment(2, Qt::AlignCenter);
+
+            new_items.append(item);
+            if (!first_new_item)
+                first_new_item = item;
         }
-        else if (!rep.header.valid_magic || !rep.header.structure_ok || !rep.header.kdf_safe)
+
+        if (!new_items.isEmpty())
         {
-            item->setText(1, "INVALID");
-            item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
-            item->setForeground(1, QColor(0xff, 0x66, 0x66));
+            queue_tree->addTopLevelItems(new_items);
+            if (was_empty && first_new_item)
+            {
+                queue_tree->setCurrentItem(first_new_item);
+            }
         }
-        else
-        {
-            item->setText(1, "OK");
-            item->setToolTip(1, "Container header and parameters valid");
-            item->setForeground(1, QColor(0x55, 0xff, 0x55));
-        }
-        item->setText(2, "PENDING");
-        item->setToolTip(2, "Awaiting credentials to verify AEAD integrity");
-        item->setForeground(2, QColor(0xaa, 0xaa, 0xaa));
-        item->setTextAlignment(1, Qt::AlignCenter);
-        item->setTextAlignment(2, Qt::AlignCenter);
-        if (queue_tree->topLevelItemCount() == 1)
-        {
-            queue_tree->setCurrentItem(item);
-        }
+
+        queue_tree->setUpdatesEnabled(true);
+
         update_qs();
         refresh_properties();
         adjust_qc();
@@ -1290,12 +1334,15 @@ namespace pk::ui::outs
     }
     void cd_am_i_evil::dropEvent(QDropEvent *event)
     {
+        QStringList paths;
         for (const QUrl &url : event->mimeData()->urls())
         {
             QString path = url.toLocalFile();
             if (!path.isEmpty())
-                add_path(path);
+                paths.append(path);
         }
+        if (!paths.isEmpty())
+            add_paths(paths);
     }
     void cd_am_i_evil::setup_ui()
     {
@@ -1460,8 +1507,8 @@ namespace pk::ui::outs
     void cd_am_i_evil::on_add_files()
     {
         QStringList paths = QFileDialog::getOpenFileNames(this, "Select archives to verify", "", "MAGE archives (*.mage);; All files (*.*)");
-        for (const QString &p : paths)
-            add_path(p);
+        if (!paths.isEmpty())
+            add_paths(paths);
     }
     void cd_am_i_evil::on_remove_files()
     {
@@ -1699,8 +1746,12 @@ namespace pk::ui::outs
         }
         QStringList passed_reports;
         QStringList failed_reports;
+        bool user_cancelled = false;
         for (int i = 0; i < static_cast<int>(m_reports.size()); ++i)
         {
+            if (user_cancelled)
+                break;
+
             auto &rep = m_reports[i];
             QString archive_path = QString::fromStdString(rep.header.___filepath.string());
             QString base_name = QFileInfo(archive_path).fileName();
@@ -1708,7 +1759,8 @@ namespace pk::ui::outs
             w->ss_def_verify_params(archive_path, password_v->text(), keyfile_path_v->text());
             cd_prog_dialog pd(w, this);
             QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
-            if (pd.exec() == QDialog::Accepted)
+            int res = pd.exec();
+            if (res == QDialog::Accepted)
             {
                 rep = w->what_report();
                 if (tree_item)
@@ -1734,24 +1786,42 @@ namespace pk::ui::outs
             }
             else
             {
-                auto worker_rep = w->what_report();
-                if (worker_rep.header.file_exists)
+                w->requestInterruption();
+                w->wait(3000);
+                if (pd.what_err_msg().isEmpty())
                 {
-                    rep = worker_rep;
+                    user_cancelled = true;
+                    if (tree_item)
+                    {
+                        tree_item->setText(2, "CANCELLED");
+                        tree_item->setToolTip(2, "Verification cancelled by user");
+                        tree_item->setForeground(2, QColor(0xe5, 0xc0, 0x7b));
+                    }
+                    rep.error_details = "Verification cancelled by user.";
+                    failed_reports.append(QString(">> %1:\n   - Verification cancelled").arg(base_name));
+                    break;
                 }
-                if (rep.error_details.empty())
+                else
                 {
-                    rep.error_details = pd.what_err_msg().isEmpty() ? "Integrity check failed" : pd.what_err_msg().toStdString();
+                    auto worker_rep = w->what_report();
+                    if (worker_rep.header.file_exists)
+                    {
+                        rep = worker_rep;
+                    }
+                    if (rep.error_details.empty())
+                    {
+                        rep.error_details = pd.what_err_msg().toStdString();
+                    }
+                    if (tree_item)
+                    {
+                        QString verdict_lbl = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
+                        tree_item->setText(2, "INVALID");
+                        tree_item->setToolTip(2, verdict_lbl + "\n" + QString::fromStdString(rep.error_details));
+                        tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
+                    }
+                    QString err = QString::fromStdString(rep.error_details);
+                    failed_reports.append(QString(">> %1:\n   - Error: %2").arg(base_name).arg(err));
                 }
-                if (tree_item)
-                {
-                    QString verdict_lbl = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
-                    tree_item->setText(2, "INVALID");
-                    tree_item->setToolTip(2, verdict_lbl + "\n" + QString::fromStdString(rep.error_details));
-                    tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
-                }
-                QString err = QString::fromStdString(rep.error_details);
-                failed_reports.append(QString(">> %1:\n   - Error: %2").arg(base_name).arg(err));
             }
         }
 
@@ -1810,6 +1880,8 @@ namespace pk::ui::outs
     }
     void cd_am_i_evil::on_close()
     {
+        password_v->clear();
+        keyfile_path_v->clear();
         accept();
     }
     void cd_am_i_evil::adjust_qc()
