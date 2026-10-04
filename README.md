@@ -13,7 +13,7 @@ You can check out the documentation for the threat model, usage of **Argon2id** 
 ## **Features**
 - "I dunno" policy, you either get nothing without the password or everything with the password.
 - File / folder encryption with **AES-256-GCM**, **AES-256-SIV** or **XChaCha20-Poly1305** only.
-- **Argon2ID** hashing / password deriviation with configurable specs.
+- **Argon2id** hashing / password deriviation with configurable specs.
 - Proper path normalization and path sanitization to prevent traversal attacks.
 - `Qt6` GUI, that hopefully doesn't blind you.
 - Metadata preservation, also encrypted.
@@ -23,7 +23,8 @@ You can check out the documentation for the threat model, usage of **Argon2id** 
 - Password + keyfiles as the same entropy source.
 - Secure memory handling of passwords and **Argon2ID** hashes.
 - Human readable errors. Surprising!
-- Bulk file decryption! Provided the entropy source matches across all files...
+- Bulk file decryption, this time with the ability to provide a custom entropy source (password / keyfile) for each archive.
+- Archive verification, if you were tired of extracting an archive just to check if the AEAD integrity was fine.
 - Much more for you to see in the app.
 
 ## **Obtaining MAGE yourself**
