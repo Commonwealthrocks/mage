@@ -65,7 +65,8 @@ namespace pk::crypto::am_i_evil
     verification_report verify_archive(
         const std::filesystem::path &archive_path,
         std::string_view password,
-        std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb = nullptr);
+        std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb = nullptr,
+        std::function<bool()> cancel_cb = nullptr);
     std::string verdict_to_str(__vv_ v);
     std::string format_bytes(uint64_t bytes);
     std::string numbers_with_commas_unlike_in_gta_5(uint64_t val);
