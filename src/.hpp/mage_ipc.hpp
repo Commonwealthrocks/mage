@@ -1,5 +1,5 @@
 // mage_ipc.hpp
-// last updated: 08/07/2026
+// last updated: 04/10/2026
 #pragma once
 #include <QString>
 #include <QObject>
@@ -20,6 +20,7 @@ namespace pk::ipc
     signals:
         void rq_enc(const QString &path);
         void rq_dec(const QString &path);
+        void rq_ver(const QString &path);
     private slots:
         void hn_connection();
         void read_data();
