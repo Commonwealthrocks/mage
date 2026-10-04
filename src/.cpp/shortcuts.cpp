@@ -56,9 +56,13 @@ namespace pk::ui::shortcuts
                             QMetaObject::invokeMethod(active, "on_settings_clicked");
                             return true;
                         }
+                        else if (keyEvent->key() == Qt::Key_V)
+                        {
+                            QMetaObject::invokeMethod(active, "on_verify_archive_clicked");
+                            return true;
+                        }
                     }
                 }
-
                 if (keyEvent->key() == Qt::Key_I)
                 {
                     pk::ui::outs::toggle_internal_console();
@@ -97,7 +101,7 @@ namespace pk::ui::shortcuts
     {
         QDialog dialog(parent);
         dialog.setWindowTitle("Keybinds");
-        dialog.setFixedSize(400, 250);
+        dialog.setFixedSize(400, 280);
         pk::ui::outs::dont_burn_my_eyes(&dialog);
         QVBoxLayout *layout = new QVBoxLayout(&dialog);
         QLabel *title = new QLabel("Shortcuts", &dialog);
@@ -108,7 +112,7 @@ namespace pk::ui::shortcuts
         layout->addWidget(title);
         QTableWidget *table = new QTableWidget(&dialog);
         table->setColumnCount(2);
-        table->setRowCount(6);
+        table->setRowCount(7);
         table->setHorizontalHeaderLabels({"Shortcut", "Action"});
         table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
         table->horizontalHeader()->setStretchLastSection(true);
