@@ -1,11 +1,12 @@
 // gui_worker.hpp
-// last updated: 06/07/2026
+// last updated: 04/10/2026
 #pragma once
 #include <QThread>
 #include <QString>
 #include <vector>
 #include <string>
 #include "../.hpp/fileformat.hpp"
+#include "../.hpp/am_i_evil.hpp"
 namespace pk::ui::worker
 {
     class crypto_worker : public QThread
@@ -15,11 +16,13 @@ namespace pk::ui::worker
         enum class mode
         {
             pack,
-            unpack
+            unpack,
+            am_i_evil
         };
         explicit crypto_worker(mode m, QObject *parent = nullptr);
         ~crypto_worker() override = default;
         mode what_mode() const { return __mode; }
+        const pk::crypto::am_i_evil::verification_report &what_report() const { return verify_rep; }
         void ss_def_pk_params(
             const std::vector<std::string> &roots,
             const QString &out_path,
@@ -39,6 +42,10 @@ namespace pk::ui::worker
             const QString &keyfile_path,
             int ext_behavior = 0,
             int ext_overwrite = 0);
+        void ss_def_verify_params(
+            const QString &in_path,
+            const QString &password,
+            const QString &keyfile_path);
     signals:
         void success();
         void error(const QString &message);
@@ -67,6 +74,7 @@ namespace pk::ui::worker
         std::string output_dir;
         int ext_behavior_v;
         int ext_overwrite_v;
+        pk::crypto::am_i_evil::verification_report verify_rep;
     };
 }
 
