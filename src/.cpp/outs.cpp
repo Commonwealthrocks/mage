@@ -979,8 +979,7 @@ namespace pk::ui::outs
             QString fn = QFileInfo(targets[0].first).fileName();
             QString fn_elided = fontMetrics().elidedText(fn, Qt::ElideMiddle, 240);
             setWindowTitle("Set entropy - " + fn_elided);
-            resize(480, 270);
-            setMinimumSize(440, 250);
+            setFixedSize(480, 280);
             archive_tab_ui ui_ref;
             QWidget *page = create_page(targets[0].first, targets[0].second, ui_ref);
             m_tab_uis.append(ui_ref);
@@ -989,8 +988,7 @@ namespace pk::ui::outs
         else
         {
             setWindowTitle(QString("Set entropy - %1 archives selected").arg(targets.size()));
-            resize(540, 360);
-            setMinimumSize(480, 320);
+            setFixedSize(540, 380);
             m_tabs = new QTabWidget(this);
             m_tabs->setUsesScrollButtons(true);
             m_tabs->setElideMode(Qt::ElideMiddle);
@@ -1699,8 +1697,7 @@ namespace pk::ui::outs
     {
         setWindowTitle("Verify archive");
         setWindowFlags(windowFlags() | Qt::Window);
-        resize(920, 500);
-        setMinimumSize(840, 480);
+        setFixedSize(920, 500);
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
@@ -2297,7 +2294,7 @@ namespace pk::ui::outs
         }
         else
         {
-            add_prop(cat_crypto, "Entropy source", "Default (global input)", QColor(0xa0, 0xa0, 0xa0), "Using global password and keyfile inputs");
+            add_prop(cat_crypto, "Entropy source", "default (global input)", QColor(0xa0, 0xa0, 0xa0), "Using global password and keyfile inputs");
         }
         QTreeWidgetItem *cat_cmp = add_category("Compression n' metadata");
         QString cmp_str = "-";
@@ -2645,7 +2642,7 @@ namespace pk::ui::outs
     {
         setWindowTitle("Settings");
         setWindowFlags(windowFlags() | Qt::Window);
-        setFixedSize(450, 350);
+        setFixedSize(540, 380);
         setup_ui();
         dont_burn_my_eyes(this);
     }
