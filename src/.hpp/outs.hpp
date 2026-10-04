@@ -161,6 +161,7 @@ namespace pk::ui::outs
         explicit cd_am_i_evil(QWidget *parent = nullptr, const QString &ini_path = "");
         ~cd_am_i_evil() override = default;
         void add_path(const QString &path);
+        void add_paths(const QStringList &paths);
 
     protected:
         void dragEnterEvent(QDragEnterEvent *event) override;
