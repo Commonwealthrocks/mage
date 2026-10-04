@@ -1,10 +1,12 @@
 // outs.hpp
-// last updated: 03/08/2026
+// last updated: 04/10/2026
 #pragma once
 #include <QString>
 #include <QWidget>
 #include <QDialog>
 #include <QListWidget>
+#include <QTreeWidget>
+#include <QPushButton>
 #include <QLineEdit>
 #include <QComboBox>
 #include <QSpinBox>
@@ -27,12 +29,12 @@ namespace pk::ui::outs
     bool valid_path_probable(const QString &path, QString *err_msg = nullptr);
     void cd_about_mage(QWidget *parent);
     void toggle_internal_console();
-    class progress_dialog : public QDialog
+    class cd_prog_dialog : public QDialog
     {
         Q_OBJECT
     public:
-        explicit progress_dialog(worker::crypto_worker *worker, QWidget *parent = nullptr);
-        ~progress_dialog() override = default;
+        explicit cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent = nullptr);
+        ~cd_prog_dialog() override = default;
         QString what_err_msg() const { return current_err; }
     private slots:
         void on_progress(int percentage);
@@ -86,7 +88,7 @@ namespace pk::ui::outs
     {
         Q_OBJECT
     public:
-        explicit cd_mk_archive(QWidget *parent = nullptr, const QString &initial_path = "");
+        explicit cd_mk_archive(QWidget *parent = nullptr, const QString &ini_path = "");
         ~cd_mk_archive() override = default;
         void add_path(const QString &path);
 
@@ -126,7 +128,7 @@ namespace pk::ui::outs
     {
         Q_OBJECT
     public:
-        explicit cd_decrypt_archive(QWidget *parent = nullptr, const QString &initial_path = "");
+        explicit cd_decrypt_archive(QWidget *parent = nullptr, const QString &ini_path = "");
         ~cd_decrypt_archive() override = default;
         void add_path(const QString &path);
 
@@ -151,6 +153,46 @@ namespace pk::ui::outs
         QComboBox *ext_behavior;
         QCheckBox *ext_open;
         QComboBox *ext_overwrite;
+    };
+    class cd_am_i_evil : public QDialog
+    {
+        Q_OBJECT
+    public:
+        explicit cd_am_i_evil(QWidget *parent = nullptr, const QString &ini_path = "");
+        ~cd_am_i_evil() override = default;
+        void add_path(const QString &path);
+
+    protected:
+        void dragEnterEvent(QDragEnterEvent *event) override;
+        void dropEvent(QDropEvent *event) override;
+        void resizeEvent(QResizeEvent *event) override;
+
+    private slots:
+        void on_add_files();
+        void on_remove_files();
+        void on_clear_all();
+        void on_selection_changed();
+        void on_copy_path();
+        void on_verify_integrity();
+        void on_export_log();
+        void on_close();
+
+    private:
+        void setup_ui();
+        void view_archive_index(int index);
+        void update_qs();
+        void refresh_properties();
+        void adjust_qc();
+        void adjust_pc();
+
+        QTreeWidget *queue_tree;
+        QLabel *lbl_queue_summary;
+        QLineEdit *txt_current_path;
+        QPushButton *btn_copy_path;
+        QTreeWidget *pt;
+        QLineEdit *password_v;
+        QLineEdit *keyfile_path_v;
+        std::vector<pk::crypto::am_i_evil::verification_report> m_reports;
     };
     class cd_settings : public QDialog
     {
