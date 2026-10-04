@@ -91,7 +91,8 @@ namespace pk::ui::outs
         Q_OBJECT
     public:
         explicit cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent = nullptr);
-        ~cd_prog_dialog() override = default;
+        ~cd_prog_dialog() override;
+        void reject() override;
         QString what_err_msg() const { return current_err; }
     private slots:
         void on_progress(int percentage);
@@ -146,7 +147,7 @@ namespace pk::ui::outs
         Q_OBJECT
     public:
         explicit cd_mk_archive(QWidget *parent = nullptr, const QString &ini_path = "");
-        ~cd_mk_archive() override = default;
+        ~cd_mk_archive() override;
         void add_path(const QString &path);
 
     protected:

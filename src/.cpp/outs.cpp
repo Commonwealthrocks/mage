@@ -305,11 +305,7 @@ namespace pk::ui::outs
         QHBoxLayout *btn_layout = new QHBoxLayout();
         btn_layout->addStretch();
         QPushButton *btn_cancel = new QPushButton("Cancel", this);
-        connect(btn_cancel, &QPushButton::clicked, this, [this]()
-                {
-                    if (m2_worker)
-                        m2_worker->requestInterruption();
-                    reject(); });
+        connect(btn_cancel, &QPushButton::clicked, this, &cd_prog_dialog::reject);
         btn_layout->addWidget(btn_cancel);
         layout->addLayout(btn_layout);
         timer = new QTimer(this);
@@ -325,6 +321,22 @@ namespace pk::ui::outs
         connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
         connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
         m2_worker->start();
+    }
+    cd_prog_dialog::~cd_prog_dialog()
+    {
+        if (m2_worker && m2_worker->isRunning())
+        {
+            m2_worker->requestInterruption();
+            m2_worker->wait(3000);
+        }
+    }
+    void cd_prog_dialog::reject()
+    {
+        if (m2_worker && m2_worker->isRunning())
+        {
+            m2_worker->requestInterruption();
+        }
+        QDialog::reject();
     }
     void cd_prog_dialog::on_progress(int percentage)
     {
@@ -940,19 +952,36 @@ namespace pk::ui::outs
         cd_prog_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
+            worker->wait();
             info(this, "OK", "Archive successfully created.");
             accept();
         }
         else
         {
-            if (!pd.what_err_msg().isEmpty())
+            worker->wait(3000);
+            if (!pd.what_err_msg().isEmpty() && !pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
             {
                 error(this, "Something went wrong!!!", pd.what_err_msg());
             }
         }
     }
+    cd_mk_archive::~cd_mk_archive()
+    {
+        if (password_v && !password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
+    }
     void cd_mk_archive::on_cancel()
     {
+        if (password_v && !password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
         reject();
     }
     void custom_entropy::wipe()
@@ -1184,7 +1213,6 @@ namespace pk::ui::outs
             m_tab_uis[i].chk_custom_kf->setChecked(kf_checked);
             m_tab_uis[i].txt_kf->setText(kf_text);
         }
-
         pk::ui::sfx::play_info();
     }
     void cd_gib_entropy::on_save()
@@ -1218,6 +1246,11 @@ namespace pk::ui::outs
                 ui.txt_pwd->clear();
             }
         }
+        for (auto &r : m_results)
+        {
+            r.wipe();
+        }
+        m_results.clear();
     }
     cd_decrypt_archive::cd_decrypt_archive(QWidget *parent, const QString &ini_path)
         : QDialog(parent)
@@ -1233,6 +1266,12 @@ namespace pk::ui::outs
     }
     cd_decrypt_archive::~cd_decrypt_archive()
     {
+        if (password_v && !password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
         for (auto &ce : __custom_entropy_)
             ce.wipe();
         __custom_entropy_.clear();
@@ -1627,14 +1666,22 @@ namespace pk::ui::outs
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
             w->ss_def_unpk_params(archive_path, base_out, eff_pwd, eff_kf, ext_behavior->currentIndex(), ext_overwrite->currentIndex());
             cd_prog_dialog pd(w, this);
-            if (pd.exec() == QDialog::Accepted)
+            int res = pd.exec();
+            w->wait();
+            if (res == QDialog::Accepted)
             {
                 succeeded.append(base_name);
             }
             else
             {
+                if (pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
+                {
+                    failed_names.append(base_name);
+                    failed_reasons.append("Decryption cancelled by user.");
+                    break;
+                }
                 failed_names.append(base_name);
-                failed_reasons.append(pd.what_err_msg().isEmpty() ? "Unknown error." : pd.what_err_msg());
+                failed_reasons.append(pd.what_err_msg());
             }
         }
         QString summary;
@@ -1710,6 +1757,12 @@ namespace pk::ui::outs
     }
     cd_am_i_evil::~cd_am_i_evil()
     {
+        if (password_v && !password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
         for (auto &ce : __custom_entropy_)
             ce.wipe();
         __custom_entropy_.clear();
@@ -2479,6 +2532,7 @@ namespace pk::ui::outs
             int res = pd.exec();
             if (res == QDialog::Accepted)
             {
+                w->wait();
                 rep = w->what_report();
                 if (tree_item)
                 {
@@ -2505,7 +2559,7 @@ namespace pk::ui::outs
             {
                 w->requestInterruption();
                 w->wait(3000);
-                if (pd.what_err_msg().isEmpty())
+                if (pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
                 {
                     user_cancelled = true;
                     if (tree_item)
