@@ -1,5 +1,5 @@
 // fileformat.hpp
-// last updated: 06/07/2026
+// last updated: 04/10/2026
 #pragma once
 #include "__cipher.hpp"
 #include "argon2id_hashing.hpp"
@@ -50,17 +50,19 @@ namespace pk::crypto::format
         int8_t compression_level,
         std::size_t chunk_size,
         std::function<void(uint64_t bytes_processed, uint64_t total_bytes, const std::string &current_file)> progress_cb = nullptr,
-        std::function<void(const std::string &status)> status_cb = nullptr);
+        std::function<void(const std::string &status)> status_cb = nullptr,
+        std::function<bool()> cancel_cb = nullptr);
     void unpack_archive(
         const std::filesystem::path &in_path,
         const std::filesystem::path &out_dir,
         std::string_view password,
         int ext_behavior,
         int ext_overwrite,
-        std::function<int(const std::string&)> overwrite_ask_cb,
+        std::function<int(const std::string &)> overwrite_ask_cb,
         std::function<void(uint64_t bytes_processed, uint64_t total_bytes, const std::string &current_file)> progress_cb = nullptr,
         std::function<bool()> zipbomb_cb = nullptr,
-        std::function<void(const std::string &status)> status_cb = nullptr);
+        std::function<void(const std::string &status)> status_cb = nullptr,
+        std::function<bool()> cancel_cb = nullptr);
 }
 
 // end

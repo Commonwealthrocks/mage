@@ -28,7 +28,8 @@ namespace pk::crypto::format
         int8_t compression_level,
         std::size_t chunk_size,
         std::function<void(uint64_t, uint64_t, const std::string &)> progress_cb,
-        std::function<void(const std::string &)> status_cb)
+        std::function<void(const std::string &)> status_cb,
+        std::function<bool()> cancel_cb)
     {
         uint64_t total_bytes = sizeof(uint64_t) + sizeof(uint32_t);
         for (const auto &e : entries)
@@ -54,6 +55,23 @@ namespace pk::crypto::format
         if (!out)
             throw std::runtime_error("failed to open output file");
         out.exceptions(std::ios::failbit | std::ios::badbit);
+        bool op_success = false;
+        struct cleanup_guard
+        {
+            const std::filesystem::path &p;
+            bool &ok;
+            std::ofstream &f;
+            ~cleanup_guard()
+            {
+                if (!ok)
+                {
+                    if (f.is_open())
+                        f.close();
+                    std::error_code ec;
+                    std::filesystem::remove(p, ec);
+                }
+            }
+        } file_guard{out_path, op_success, out};
         auto salt_res = pk::crypto::kdf::mk_salt(16);
         if (!pk::crypto::kdf::ok(salt_res.second))
             throw std::runtime_error("salt generation failed");
@@ -94,7 +112,21 @@ namespace pk::crypto::format
             status_cb("encrypting " + std::to_string(entries.size()) + " files...");
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
+        pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+        key_res.first.clear();
         std::vector<uint8_t> buffer(chunk_size);
+        struct buf_guard
+        {
+            std::vector<uint8_t> &b;
+            ~buf_guard()
+            {
+                if (!b.empty())
+                {
+                    pk::mem_::secure_wipe(b.data(), b.size());
+                    b.clear();
+                }
+            }
+        } b_guard{buffer};
         std::size_t buffer_pos = 0;
         uint64_t chunk_index = 0;
         const std::size_t nonce_size = cipher->nonce_size_abl();
@@ -139,6 +171,8 @@ namespace pk::crypto::format
         auto compressor = pk::crypto::cmp_e::mk_cmp_e(static_cast<pk::crypto::cmp_e::algorithm>(compression_algo), compression_level);
         auto write_stream = [&](const void *data, std::size_t size)
         {
+            if (cancel_cb && cancel_cb())
+                throw std::runtime_error("operation cancelled by user.");
             if (compressor)
             {
                 auto compressed = compressor->cmp(data, size);
@@ -198,9 +232,23 @@ namespace pk::crypto::format
                 if (!in)
                     throw std::runtime_error("failed to open input file: " + entry.source_path.string());
                 std::vector<char> file_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
+                struct file_buf_guard
+                {
+                    std::vector<char> &f;
+                    ~file_buf_guard()
+                    {
+                        if (!f.empty())
+                        {
+                            pk::mem_::secure_wipe(f.data(), f.size());
+                            f.clear();
+                        }
+                    }
+                } fb_guard{file_buf};
                 uint64_t remaining = entry.file_size;
                 while (remaining > 0 && in)
                 {
+                    if (cancel_cb && cancel_cb())
+                        throw std::runtime_error("operation cancelled by user.");
                     std::size_t to_read = static_cast<std::size_t>(std::min<uint64_t>(remaining, file_buf.size()));
                     in.read(file_buf.data(), to_read);
                     std::size_t bytes_read = in.gcount();
@@ -229,6 +277,7 @@ namespace pk::crypto::format
             }
         }
         flush_chunk();
+        op_success = true;
         if (progress_cb)
             progress_cb(total_bytes, total_bytes, current_file);
     }
@@ -241,7 +290,8 @@ namespace pk::crypto::format
         std::function<int(const std::string &)> overwrite_ask_cb,
         std::function<void(uint64_t, uint64_t, const std::string &)> progress_cb,
         std::function<bool()> zipbomb_cb,
-        std::function<void(const std::string &)> status_cb)
+        std::function<void(const std::string &)> status_cb,
+        std::function<bool()> cancel_cb)
     {
         uint64_t total_bytes = std::filesystem::file_size(in_path);
         uint64_t processed_bytes = 0;
@@ -284,10 +334,30 @@ namespace pk::crypto::format
         cipher::algorithm algo = static_cast<cipher::algorithm>(header.algo);
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
+        pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+        key_res.first.clear();
         std::size_t block_size = chunk_size + cipher->what_mac_size();
         std::vector<uint8_t> buffer(block_size);
-        uint64_t chunk_index = 0;
         std::vector<uint8_t> plaintext_stream;
+        struct unpack_buf_guard
+        {
+            std::vector<uint8_t> &b;
+            std::vector<uint8_t> &pt;
+            ~unpack_buf_guard()
+            {
+                if (!b.empty())
+                {
+                    pk::mem_::secure_wipe(b.data(), b.size());
+                    b.clear();
+                }
+                if (!pt.empty())
+                {
+                    pk::mem_::secure_wipe(pt.data(), pt.size());
+                    pt.clear();
+                }
+            }
+        } up_guard{buffer, plaintext_stream};
+        uint64_t chunk_index = 0;
         std::size_t plaintext_pos = 0;
         const std::size_t nonce_size = cipher->nonce_size_abl();
         uint8_t current_nonce[24]{};
@@ -298,6 +368,8 @@ namespace pk::crypto::format
             static_cast<pk::crypto::cmp_e::algorithm>(header.compression_algo));
         auto fetch_next_chunk = [&]()
         {
+            if (cancel_cb && cancel_cb())
+                throw std::runtime_error("operation cancelled by user.");
             in.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
             std::size_t bytes_read = in.gcount();
             if (bytes_read == 0)
@@ -504,8 +576,22 @@ namespace pk::crypto::format
                 out.exceptions(std::ios::failbit | std::ios::badbit);
                 uint64_t remaining = file_size;
                 std::vector<char> write_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
+                struct write_buf_guard
+                {
+                    std::vector<char> &w;
+                    ~write_buf_guard()
+                    {
+                        if (!w.empty())
+                        {
+                            pk::mem_::secure_wipe(w.data(), w.size());
+                            w.clear();
+                        }
+                    }
+                } wb_guard{write_buf};
                 while (remaining > 0)
                 {
+                    if (cancel_cb && cancel_cb())
+                        throw std::runtime_error("operation cancelled by user.");
                     std::size_t to_write = static_cast<std::size_t>(std::min<uint64_t>(remaining, write_buf.size()));
                     read_from_stream(write_buf.data(), to_write);
                     out.write(write_buf.data(), to_write);
