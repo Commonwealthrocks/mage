@@ -1,5 +1,5 @@
 // cm.cpp
-// last updated: 28/06/2026
+// last updated: 04/10/2026
 #include "../.hpp/cm.hpp"
 #include <QSettings>
 #include <QCoreApplication>
@@ -43,6 +43,9 @@ namespace pk::os::cm
             reg.setValue("shell/2_decrypt/.", "Decrypt with MAGE...");
             reg.setValue("shell/2_decrypt/Icon", icon);
             reg.setValue("shell/2_decrypt/command/.", "\"" + exe_path + "\" --decrypt \"%1\"");
+            reg.setValue("shell/3_verify/.", "Verify archive with MAGE...");
+            reg.setValue("shell/3_verify/Icon", icon);
+            reg.setValue("shell/3_verify/command/.", "\"" + exe_path + "\" --verify \"%1\"");
             reg.sync();
             write_empty_sz(HKEY_CURRENT_USER, reg_subkey, L"SubCommands");
         };
