@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 01/10/2026
+// last updated: 04/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -34,12 +34,16 @@
 #include <QPixmap>
 #include <QListView>
 #include <QTreeView>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QClipboard>
 #include <QFileInfo>
 #include <QIcon>
 #include <QRegularExpression>
 #include "../.hpp/error_msg.hpp"
 #include "../.hpp/aes_ni.hpp"
 #include "../.hpp/path_handler.hpp"
+#include "../.hpp/am_i_evil.hpp"
 #include "../.hpp/settings.hpp"
 #include "../.hpp/sfx.hpp"
 #ifdef _WIN32
@@ -89,11 +93,10 @@ namespace pk::ui::outs
                        "</div>")
             .arg(title.toHtmlEscaped(), body);
     }
-
-    static QMap<QString, QString> parse_tooltips(const QString &file_path)
+    static QMap<QString, QString> parse_tooltips(const QString &___filepath)
     {
         QMap<QString, QString> tooltips;
-        QFile file(file_path);
+        QFile file(___filepath);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
             return tooltips;
         QTextStream in(&file);
@@ -242,7 +245,7 @@ namespace pk::ui::outs
         custom_msg_dialog dlg(title, message, true, parent);
         return dlg.exec() == QDialog::Accepted;
     }
-    progress_dialog::progress_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+    cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
     {
         QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
         setWindowTitle(base_title + " - 0%");
@@ -302,20 +305,20 @@ namespace pk::ui::outs
         btn_layout->addWidget(btn_cancel);
         layout->addLayout(btn_layout);
         timer = new QTimer(this);
-        connect(timer, &QTimer::timeout, this, &progress_dialog::on_update_stats);
+        connect(timer, &QTimer::timeout, this, &cd_prog_dialog::on_update_stats);
         timer->start(500);
         elapsed.start();
         // mk signals here
-        connect(m2_worker, &worker::crypto_worker::success, this, &progress_dialog::on_success);
-        connect(m2_worker, &worker::crypto_worker::error, this, &progress_dialog::on_error);
-        connect(m2_worker, &worker::crypto_worker::progress, this, &progress_dialog::on_progress);
-        connect(m2_worker, &worker::crypto_worker::pr_details, this, &progress_dialog::on_pr_details);
-        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &progress_dialog::on_current_ac0);
-        connect(m2_worker, &worker::crypto_worker::current_file, this, &progress_dialog::on_current_file);
+        connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
+        connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
+        connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
+        connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
+        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
+        connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
         connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
         m2_worker->start();
     }
-    void progress_dialog::on_progress(int percentage)
+    void cd_prog_dialog::on_progress(int percentage)
     {
         current_pct = percentage;
         if (indeterminate)
@@ -328,12 +331,12 @@ namespace pk::ui::outs
         QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
         setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
     }
-    void progress_dialog::on_pr_details(uint64_t processed, uint64_t total)
+    void cd_prog_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
         current_proc = processed;
         tot_bytes = total;
     }
-    void progress_dialog::on_current_ac0(const QString &action)
+    void cd_prog_dialog::on_current_ac0(const QString &action)
     {
         current_ac0_text = action;
         lbl_overall->setText(action);
@@ -353,7 +356,7 @@ namespace pk::ui::outs
             progress___->setFormat(QString::number(current_pct) + "%");
         }
     }
-    void progress_dialog::on_current_file(const QString &file)
+    void cd_prog_dialog::on_current_file(const QString &file)
     {
         current_file_text = file;
         QString display = file;
@@ -361,27 +364,21 @@ namespace pk::ui::outs
             display = "..." + display.right(62);
         lbl_file->setText(display);
     }
-    void progress_dialog::on_update_stats()
+    void cd_prog_dialog::on_update_stats()
     {
         auto format_size = [](uint64_t s) -> QString
         {
-            if (s >= (uint64_t)1024 * 1024 * 1024)
-                return QString("%1 GB").arg((double)s / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
-            if (s >= 1024 * 1024)
-                return QString("%1 MB").arg((double)s / (1024.0 * 1024.0), 0, 'f', 2);
-            if (s >= 1024)
-                return QString("%1 KB").arg((double)s / 1024.0, 0, 'f', 2);
-            return QString("%1 B").arg(s);
+            return QString::fromStdString(pk::crypto::am_i_evil::format_bytes(s));
         };
         uint64_t bytes_delta = current_proc - last_processed;
         last_processed = current_proc;
-        double speed_bytes_s = (double)bytes_delta * 2.0; // 500ms, double then
+        double speed_bytes_s = (double)bytes_delta * 2.0;
         if (speed_bytes_s >= 1024.0 * 1024.0)
-            lbl_sped->setText(QString("%1 MB/s").arg(speed_bytes_s / (1024.0 * 1024.0), 0, 'f', 2));
+            lbl_sped->setText(QString("%1MB/s").arg(speed_bytes_s / (1024.0 * 1024.0), 0, 'f', 2));
         else if (speed_bytes_s >= 1024.0)
-            lbl_sped->setText(QString("%1 KB/s").arg(speed_bytes_s / 1024.0, 0, 'f', 1));
+            lbl_sped->setText(QString("%1KB/s").arg(speed_bytes_s / 1024.0, 0, 'f', 1));
         else if (current_proc > 0)
-            lbl_sped->setText(QString("%1 B/s").arg((uint64_t)speed_bytes_s));
+            lbl_sped->setText(QString("%1B/s").arg((uint64_t)speed_bytes_s));
         else
             lbl_sped->setText("-");
         if (tot_bytes > 0)
@@ -435,13 +432,13 @@ namespace pk::ui::outs
             lbl_file_count->setText("-");
         }
     }
-    void progress_dialog::on_success()
+    void cd_prog_dialog::on_success()
     {
         _success = true;
         pk::ui::sfx::play_success();
         accept();
     }
-    void progress_dialog::on_error(const QString &msg)
+    void cd_prog_dialog::on_error(const QString &msg)
     {
         _success = false;
         current_err = msg;
@@ -512,7 +509,7 @@ namespace pk::ui::outs
     {
         reject();
     }
-    cd_mk_archive::cd_mk_archive(QWidget *parent, const QString &initial_path)
+    cd_mk_archive::cd_mk_archive(QWidget *parent, const QString &ini_path)
         : QDialog(parent)
     {
         setWindowTitle("Create archive");
@@ -521,9 +518,9 @@ namespace pk::ui::outs
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
-        if (!initial_path.isEmpty())
+        if (!ini_path.isEmpty())
         {
-            add_path(initial_path);
+            add_path(ini_path);
         }
     }
     void cd_mk_archive::add_path(const QString &path)
@@ -587,9 +584,11 @@ namespace pk::ui::outs
         __cp_metadata->setChecked(pk::cfg::settings::instance().cp_metadata());
         chunk_size_used = new QSpinBox(this);
         chunk_size_used->setRange(1, 64);
-        chunk_size_used->setSuffix(" MBs");
         chunk_size_used->setValue(pk::cfg::settings::instance().def_chunk_size());
+        chunk_size_used->setSuffix(chunk_size_used->value() == 1 ? "MB" : "MBs");
         chunk_size_used->setContextMenuPolicy(Qt::NoContextMenu);
+        connect(chunk_size_used, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val)
+                { chunk_size_used->setSuffix(val == 1 ? "MB" : "MBs"); });
         form_gen->addRow(_include_hidden);
         form_gen->addRow(__cp_metadata);
         form_gen->addRow("Chunk size:", chunk_size_used);
@@ -625,16 +624,19 @@ namespace pk::ui::outs
         s_mem_cost = new QSpinBox(this);
         s_mem_cost->setRange(1, 4096);
         s_mem_cost->setValue(pk::cfg::settings::instance().def_mem_cost() / 1024);
-        s_mem_cost->setSuffix(" MBs");
+        s_mem_cost->setSuffix(s_mem_cost->value() == 1 ? "MB" : "MBs");
+        s_mem_cost->setContextMenuPolicy(Qt::NoContextMenu);
+        connect(s_mem_cost, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val)
+                { s_mem_cost->setSuffix(val == 1 ? "MB" : "MBs"); });
         s_cores = new QSpinBox(this);
         s_cores->setRange(1, 64);
         s_cores->setValue(pk::cfg::settings::instance().def_cores());
         s_tc->setContextMenuPolicy(Qt::NoContextMenu);
         s_mem_cost->setContextMenuPolicy(Qt::NoContextMenu);
         s_cores->setContextMenuPolicy(Qt::NoContextMenu);
-        form_kdf->addRow("Argon2ID time cost:", s_tc);
-        form_kdf->addRow("Argon2ID memory cost:", s_mem_cost);
-        form_kdf->addRow("Argon2ID parallelism:", s_cores);
+        form_kdf->addRow("Argon2id time cost:", s_tc);
+        form_kdf->addRow("Argon2id memory cost:", s_mem_cost);
+        form_kdf->addRow("Argon2id parallelism:", s_cores);
         tabs->addTab(tab_kdf, "KDF");
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
@@ -927,7 +929,7 @@ namespace pk::ui::outs
             comp_algo,
             comp_level,
             chunk_size_used->value());
-        progress_dialog pd(worker, this);
+        cd_prog_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
             info(this, "Success", "Archive successfully created.");
@@ -945,7 +947,7 @@ namespace pk::ui::outs
     {
         reject();
     }
-    cd_decrypt_archive::cd_decrypt_archive(QWidget *parent, const QString &initial_path)
+    cd_decrypt_archive::cd_decrypt_archive(QWidget *parent, const QString &ini_path)
         : QDialog(parent)
     {
         setWindowTitle("Decrypt archive");
@@ -954,8 +956,8 @@ namespace pk::ui::outs
         setAcceptDrops(true);
         setup_ui();
         dont_burn_my_eyes(this);
-        if (!initial_path.isEmpty())
-            add_path(initial_path);
+        if (!ini_path.isEmpty())
+            add_path(ini_path);
     }
     void cd_decrypt_archive::add_path(const QString &path)
     {
@@ -1156,7 +1158,7 @@ namespace pk::ui::outs
             QString base_name = QFileInfo(archive_path).completeBaseName();
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
             w->ss_def_unpk_params(archive_path, base_out, password_v->text(), keyfile_path_v->text(), ext_behavior->currentIndex(), ext_overwrite->currentIndex());
-            progress_dialog pd(w, this);
+            cd_prog_dialog pd(w, this);
             if (pd.exec() == QDialog::Accepted)
             {
                 succeeded.append(base_name);
@@ -1204,6 +1206,643 @@ namespace pk::ui::outs
     {
         reject();
     }
+    cd_am_i_evil::cd_am_i_evil(QWidget *parent, const QString &ini_path)
+        : QDialog(parent)
+    {
+        setWindowTitle("Verify archive");
+        setWindowFlags(windowFlags() | Qt::Window);
+        resize(920, 500);
+        setMinimumSize(840, 480);
+        setAcceptDrops(true);
+        setup_ui();
+        dont_burn_my_eyes(this);
+        if (!ini_path.isEmpty())
+            add_path(ini_path);
+        QTimer::singleShot(0, this, [this]()
+                           {
+            adjust_qc();
+            adjust_pc(); });
+    }
+    void cd_am_i_evil::add_path(const QString &path)
+    {
+        if (QFileInfo(path).isDir())
+            return;
+        QString canonical = QFileInfo(path).canonicalFilePath();
+        if (canonical.isEmpty())
+            canonical = QDir::cleanPath(path);
+        for (const auto &rep : m_reports)
+        {
+            if (QString::fromStdString(rep.header.___filepath.string()) == canonical)
+                return;
+        }
+        pk::crypto::am_i_evil::verification_report rep;
+        rep.header = pk::crypto::am_i_evil::view_header(canonical.toStdString());
+        rep.total_chunks = rep.header.est_chunks;
+        rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
+        // has the jury reached a verdict?
+        // hah i'm so unfunny
+        m_reports.push_back(rep);
+        QTreeWidgetItem *item = new QTreeWidgetItem(queue_tree);
+        item->setText(0, QFileInfo(canonical).fileName());
+        item->setToolTip(0, canonical);
+        if (!rep.header.file_exists)
+        {
+            item->setText(1, "INVALID");
+            item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
+            item->setForeground(1, QColor(0xff, 0x66, 0x66));
+        }
+        else if (!rep.header.valid_magic || !rep.header.structure_ok || !rep.header.kdf_safe)
+        {
+            item->setText(1, "INVALID");
+            item->setToolTip(1, QString::fromStdString(rep.header.sanity_notes));
+            item->setForeground(1, QColor(0xff, 0x66, 0x66));
+        }
+        else
+        {
+            item->setText(1, "OK");
+            item->setToolTip(1, "Container header and parameters valid");
+            item->setForeground(1, QColor(0x55, 0xff, 0x55));
+        }
+        item->setText(2, "PENDING");
+        item->setToolTip(2, "Awaiting credentials to verify AEAD integrity");
+        item->setForeground(2, QColor(0xaa, 0xaa, 0xaa));
+        item->setTextAlignment(1, Qt::AlignCenter);
+        item->setTextAlignment(2, Qt::AlignCenter);
+        if (queue_tree->topLevelItemCount() == 1)
+        {
+            queue_tree->setCurrentItem(item);
+        }
+        update_qs();
+        refresh_properties();
+        adjust_qc();
+    }
+    void cd_am_i_evil::view_archive_index(int index)
+    {
+        if (index < 0 || index >= static_cast<int>(m_reports.size()))
+            return;
+        m_reports[index].header = pk::crypto::am_i_evil::view_header(m_reports[index].header.___filepath);
+        m_reports[index].total_chunks = m_reports[index].header.est_chunks;
+    }
+    void cd_am_i_evil::dragEnterEvent(QDragEnterEvent *event)
+    {
+        if (event->mimeData()->hasUrls())
+            event->acceptProposedAction();
+    }
+    void cd_am_i_evil::dropEvent(QDropEvent *event)
+    {
+        for (const QUrl &url : event->mimeData()->urls())
+        {
+            QString path = url.toLocalFile();
+            if (!path.isEmpty())
+                add_path(path);
+        }
+    }
+    void cd_am_i_evil::setup_ui()
+    {
+        QVBoxLayout *main_layout = new QVBoxLayout(this);
+        main_layout->setSpacing(6);
+        main_layout->setContentsMargins(8, 8, 8, 8);
+        QHBoxLayout *columns_layout = new QHBoxLayout();
+        columns_layout->setSpacing(8);
+        QVBoxLayout *left_layout = new QVBoxLayout();
+        left_layout->setSpacing(6);
+        QGroupBox *group_queue = new QGroupBox("Archive queue", this);
+        group_queue->setStyleSheet("QGroupBox { border: none; font-weight: bold; font-size: 12px; margin-top: 2px; padding-top: 14px; } "
+                                   "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0px; color: #ffffff; }");
+        QVBoxLayout *queue_layout = new QVBoxLayout(group_queue);
+        queue_layout->setSpacing(4);
+        queue_layout->setContentsMargins(0, 4, 0, 0);
+        queue_tree = new QTreeWidget(this);
+        queue_tree->setHeaderLabels(QStringList{"Archive", "Header check", "AEAD integrity"});
+        queue_tree->setRootIsDecorated(false); // qt?
+        queue_tree->setSelectionMode(QAbstractItemView::SingleSelection);
+        queue_tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        queue_tree->setTextElideMode(Qt::ElideNone);
+        queue_tree->header()->setStretchLastSection(false);
+        queue_tree->header()->setSectionResizeMode(QHeaderView::Interactive);
+        queue_tree->header()->setMinimumSectionSize(60);
+        queue_tree->headerItem()->setTextAlignment(1, Qt::AlignCenter);
+        queue_tree->headerItem()->setTextAlignment(2, Qt::AlignCenter);
+        queue_layout->addWidget(queue_tree, 1);
+        QHBoxLayout *queue_btn_layout = new QHBoxLayout();
+        QPushButton *btn_add = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add...", this);
+        QPushButton *btn_remove = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), " Remove", this);
+        QPushButton *btn_clear = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm_all.svg")), " Clear all", this);
+        queue_btn_layout->addWidget(btn_add);
+        queue_btn_layout->addWidget(btn_remove);
+        queue_btn_layout->addWidget(btn_clear);
+        queue_btn_layout->addStretch();
+        queue_layout->addLayout(queue_btn_layout);
+        lbl_queue_summary = new QLabel("Queue: 0 archives | Headers: 0 valid, 0 warnings | AEAD: 0 verified, 0 failed, 0 pending", this);
+        lbl_queue_summary->setStyleSheet("font-size: 10px; color: #a0a0a0;");
+        queue_layout->addWidget(lbl_queue_summary);
+        left_layout->addWidget(group_queue, 1);
+        QGroupBox *group_auth = new QGroupBox("AEAD integrity verification", this);
+        group_auth->setStyleSheet(
+            "QGroupBox { border: none; border-top: 1px solid #383838; font-weight: bold; font-size: 12px; margin-top: 8px; padding-top: 14px; } "
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 4px; color: #ffffff; }");
+        QVBoxLayout *auth_box_layout = new QVBoxLayout(group_auth);
+        auth_box_layout->setSpacing(4);
+        auth_box_layout->setContentsMargins(0, 4, 0, 0);
+        QLabel *lbl_auth_note = new QLabel("To verify AEAD integrity; the archive entropy source must be\nprovided, without it only header checks can be done.", this);
+        lbl_auth_note->setWordWrap(true);
+        lbl_auth_note->setStyleSheet("color: #a0a0a0; font-size: 10px;");
+        auth_box_layout->addWidget(lbl_auth_note);
+        QFormLayout *form_auth = new QFormLayout();
+        form_auth->setContentsMargins(0, 2, 0, 2);
+        form_auth->setSpacing(4);
+        password_v = new QLineEdit(this);
+        password_v->setEchoMode(QLineEdit::Password);
+        password_v->setContextMenuPolicy(Qt::NoContextMenu);
+        password_v->setPlaceholderText("Password (optional if only inspecting)...");
+        QAction *warn_action = password_v->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/warn.svg")), QLineEdit::TrailingPosition);
+        warn_action->setToolTip("CAPS lock is enabled, if you weren't aware.");
+        warn_action->setVisible(false);
+        QTimer *caps_timer = new QTimer(password_v);
+        connect(caps_timer, &QTimer::timeout, password_v, [warn_action]()
+                {
+#ifdef _WIN32
+                    bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+                    warn_action->setVisible(caps);
+#endif
+                });
+        caps_timer->start(100);
+        QAction *toggle_action = password_v->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")), QLineEdit::TrailingPosition);
+        connect(toggle_action, &QAction::triggered, this, [this, toggle_action]()
+                {
+            if (password_v->echoMode() == QLineEdit::Password) {
+                password_v->setEchoMode(QLineEdit::Normal);
+                toggle_action->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/hide_password.svg")));
+            } else {
+                password_v->setEchoMode(QLineEdit::Password);
+                toggle_action->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")));
+            } });
+        QHBoxLayout *keyfile_layout = new QHBoxLayout();
+        keyfile_path_v = new QLineEdit(this);
+        keyfile_path_v->setPlaceholderText("Select keyfile (optional)...");
+        keyfile_path_v->setReadOnly(true);
+        keyfile_path_v->setClearButtonEnabled(true);
+        QPushButton *btn_browse_keyfile = new QPushButton("Browse", this);
+        QPushButton *btn_clear_keyfile = new QPushButton("Clear", this);
+        keyfile_layout->addWidget(keyfile_path_v);
+        keyfile_layout->addWidget(btn_browse_keyfile);
+        keyfile_layout->addWidget(btn_clear_keyfile);
+        form_auth->addRow("Password:", password_v);
+        form_auth->addRow("Keyfile:", keyfile_layout);
+        auth_box_layout->addLayout(form_auth);
+        left_layout->addWidget(group_auth);
+        columns_layout->addLayout(left_layout, 10);
+        QVBoxLayout *right_layout = new QVBoxLayout();
+        right_layout->setSpacing(6);
+        QLabel *lbl_notice = new QLabel("Notice: diagnostic verification discloses container geometry and chunk layouts. "
+                                        "Do not share logs or detailed error output with untrusted parties.",
+                                        this);
+        lbl_notice->setWordWrap(true);
+        lbl_notice->setStyleSheet("color: #e5c07b; font-size: 10px; padding: 4px 6px; "
+                                  "background-color: rgba(229, 192, 123, 0.08); "
+                                  "border: 1px solid rgba(229, 192, 123, 0.25); border-radius: 4px;");
+        right_layout->addWidget(lbl_notice);
+        QHBoxLayout *path_layout = new QHBoxLayout();
+        QLabel *lbl_path_tag = new QLabel("Selected:", this);
+        lbl_path_tag->setStyleSheet("font-weight: bold; font-size: 11px;");
+        txt_current_path = new QLineEdit(this);
+        txt_current_path->setReadOnly(true);
+        txt_current_path->setPlaceholderText("No archive selected");
+        btn_copy_path = new QPushButton("Copy", this);
+        btn_copy_path->setToolTip("Copy full archive path to clipboard");
+        path_layout->addWidget(lbl_path_tag);
+        path_layout->addWidget(txt_current_path, 1);
+        path_layout->addWidget(btn_copy_path);
+        right_layout->addLayout(path_layout);
+        QGroupBox *group_props = new QGroupBox("Container properties", this);
+        group_props->setStyleSheet("QGroupBox { border: none; font-weight: bold; font-size: 12px; margin-top: 2px; padding-top: 14px; } "
+                                   "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0px; color: #ffffff; }");
+        QVBoxLayout *props_layout = new QVBoxLayout(group_props);
+        props_layout->setContentsMargins(0, 4, 0, 0);
+        pt = new QTreeWidget(this);
+        pt->setHeaderLabels(QStringList{"Property", "Value"});
+        pt->setRootIsDecorated(true);
+        pt->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        pt->setTextElideMode(Qt::ElideNone);
+        pt->header()->setStretchLastSection(false);
+        pt->header()->setSectionResizeMode(QHeaderView::Interactive);
+        pt->header()->setMinimumSectionSize(60);
+        props_layout->addWidget(pt);
+        right_layout->addWidget(group_props, 1);
+        columns_layout->addLayout(right_layout, 11);
+        main_layout->addLayout(columns_layout, 1);
+        QHBoxLayout *action_layout = new QHBoxLayout();
+        QPushButton *btn_export = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Export Log (.log)", this);
+        action_layout->addWidget(btn_export);
+        action_layout->addStretch();
+        QPushButton *btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Verify AEAD Integrity", this);
+        btn_verify->setDefault(true);
+        QPushButton *btn_close = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Close", this);
+        action_layout->addWidget(btn_verify);
+        action_layout->addWidget(btn_close);
+        main_layout->addLayout(action_layout);
+        connect(btn_add, &QPushButton::clicked, this, &cd_am_i_evil::on_add_files);
+        connect(btn_remove, &QPushButton::clicked, this, &cd_am_i_evil::on_remove_files);
+        connect(btn_clear, &QPushButton::clicked, this, &cd_am_i_evil::on_clear_all);
+        connect(queue_tree, &QTreeWidget::itemSelectionChanged, this, &cd_am_i_evil::on_selection_changed);
+        connect(btn_copy_path, &QPushButton::clicked, this, &cd_am_i_evil::on_copy_path);
+        connect(btn_browse_keyfile, &QPushButton::clicked, this, [this]()
+                {
+            QString f = QFileDialog::getOpenFileName(this, "Select keyfile", "", "All files (*.*)");
+            if (!f.isEmpty())
+                keyfile_path_v->setText(f); });
+        connect(btn_clear_keyfile, &QPushButton::clicked, this, [this]()
+                { keyfile_path_v->clear(); });
+        connect(btn_export, &QPushButton::clicked, this, &cd_am_i_evil::on_export_log);
+        connect(btn_verify, &QPushButton::clicked, this, &cd_am_i_evil::on_verify_integrity);
+        connect(btn_close, &QPushButton::clicked, this, &cd_am_i_evil::on_close);
+    }
+    void cd_am_i_evil::on_add_files()
+    {
+        QStringList paths = QFileDialog::getOpenFileNames(this, "Select archives to verify", "", "MAGE archives (*.mage);; All files (*.*)");
+        for (const QString &p : paths)
+            add_path(p);
+    }
+    void cd_am_i_evil::on_remove_files()
+    {
+        int row = queue_tree->indexOfTopLevelItem(queue_tree->currentItem());
+        if (row >= 0 && row < static_cast<int>(m_reports.size()))
+        {
+            m_reports.erase(m_reports.begin() + row);
+            delete queue_tree->takeTopLevelItem(row);
+        }
+        update_qs();
+        refresh_properties();
+        adjust_qc();
+    }
+    void cd_am_i_evil::on_clear_all()
+    {
+        m_reports.clear();
+        queue_tree->clear();
+        txt_current_path->clear();
+        pt->clear();
+        update_qs();
+        adjust_qc();
+    }
+    void cd_am_i_evil::on_selection_changed()
+    {
+        refresh_properties();
+    }
+    void cd_am_i_evil::on_copy_path()
+    {
+        QString path = txt_current_path->text();
+        if (!path.isEmpty())
+        {
+            QApplication::clipboard()->setText(path);
+        }
+    }
+    void cd_am_i_evil::update_qs()
+    {
+        int total = static_cast<int>(m_reports.size());
+        int headers_valid = 0;
+        int headers_warnings = 0;
+        int aead_verified = 0;
+        int aead_failed = 0;
+        int aead_pending = 0;
+        for (const auto &rep : m_reports)
+        {
+            if (rep.header.file_exists && rep.header.valid_magic && rep.header.structure_ok && rep.header.kdf_safe)
+                ++headers_valid;
+            else
+                ++headers_warnings;
+
+            if (rep.verdict == pk::crypto::am_i_evil::__vv_::success)
+                ++aead_verified;
+            else if (rep.verdict == pk::crypto::am_i_evil::__vv_::io_error && rep.verified_chunks == 0 && rep.error_details.empty())
+                ++aead_pending;
+            else
+                ++aead_failed;
+        }
+        lbl_queue_summary->setText(
+            QString("Queue: %1 archive(s) | Headers: %2 valid, %3 warning(s) | AEAD: %4 verified, %5 failed, %6 pending").arg(total).arg(headers_valid).arg(headers_warnings).arg(aead_verified).arg(aead_failed).arg(aead_pending));
+    }
+    void cd_am_i_evil::refresh_properties()
+    {
+        int row = queue_tree->indexOfTopLevelItem(queue_tree->currentItem());
+        if (row < 0 || row >= static_cast<int>(m_reports.size()))
+        {
+            txt_current_path->clear();
+            pt->clear();
+            return;
+        }
+        const auto &rep = m_reports[row];
+        txt_current_path->setText(QString::fromStdString(rep.header.___filepath.string()));
+        pt->clear();
+        auto add_category = [this](const QString &title) -> QTreeWidgetItem *
+        {
+            QTreeWidgetItem *cat = new QTreeWidgetItem(pt);
+            cat->setText(0, title);
+            cat->setFirstColumnSpanned(true);
+            QFont f = cat->font(0);
+            f.setBold(true);
+            cat->setFont(0, f);
+            cat->setExpanded(true);
+            return cat;
+        };
+        auto add_prop = [](QTreeWidgetItem *parent, const QString &name, const QString &val, const QColor &color = QColor(), const QString &tooltip = QString())
+        {
+            QTreeWidgetItem *item = new QTreeWidgetItem(parent);
+            item->setText(0, name);
+            item->setText(1, val);
+            if (color.isValid())
+                item->setForeground(1, color);
+            if (!tooltip.isEmpty())
+            {
+                item->setToolTip(0, tooltip);
+                item->setToolTip(1, tooltip);
+            }
+            return item;
+        };
+        QTreeWidgetItem *cat_geom = add_category("Container geometry");
+        add_prop(cat_geom, "On disk file size", QString("%1 (%2)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(rep.header.file_size_bytes) + "B")).arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.file_size_bytes))));
+        add_prop(cat_geom, "Format signature", rep.header.valid_magic ? "MAGE (valid magic)" : "invalid signature", rep.header.valid_magic ? QColor(0x55, 0xff, 0x55) : QColor(0xff, 0x55, 0x55));
+        add_prop(cat_geom, "Format version", rep.header.valid_magic ? QString("v%1").arg(static_cast<int>(rep.header.version)) : "-");
+        add_prop(cat_geom, "Payload chunk size", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)) : "-");
+        add_prop(cat_geom, "Estimated chunks", rep.header.valid_magic ? QString::number(rep.header.est_chunks) : "-");
+        QTreeWidgetItem *cat_crypto = add_category("Cryptographic parameters");
+        add_prop(cat_crypto, "Cipher algorithm", rep.header.valid_magic ? QString::fromStdString(rep.header.algo_name) : "-");
+        add_prop(cat_crypto, "Argon2id memory cost", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024)) : "-");
+        add_prop(cat_crypto, "Argon2id time cost", rep.header.valid_magic ? QString("%1 pass(es)").arg(rep.header.time_cost) : "-");
+        add_prop(cat_crypto, "Argon2id parallelism", rep.header.valid_magic ? QString("%1 thread(s)").arg(rep.header.parallelism) : "-");
+        QTreeWidgetItem *cat_cmp = add_category("Compression n' metadata");
+        QString cmp_str = "-";
+        if (rep.header.valid_magic)
+        {
+            cmp_str = QString::fromStdString(rep.header.compression_algo_name);
+            if (rep.header.compression_algo_id > 0)
+                cmp_str += QString(" (Level %1)").arg(rep.header.compression_level);
+        }
+        add_prop(cat_cmp, "Compression algorithm", cmp_str);
+        add_prop(cat_cmp, "Preserves POSIX / Win32 metadata", rep.header.valid_magic ? (rep.header.has_metadata ? "yes (true)" : "no (false)") : "-");
+        QTreeWidgetItem *cat_health = add_category("Header health n' security");
+        if (!rep.header.valid_magic)
+        {
+            add_prop(cat_health, "Structure integrity", "INVALID (not a valid signature or a MAGE file in general)", QColor(0xff, 0x55, 0x55));
+        }
+        else
+        {
+            if (!rep.header.kdf_safe)
+                add_prop(cat_health, "KDF DoS safety", "WARN (KDF parameters exceed set limits)", QColor(0xff, 0x44, 0x44));
+            else
+                add_prop(cat_health, "KDF DoS safety", "OK", QColor(0x55, 0xff, 0x55));
+
+            if (!rep.header.structure_ok)
+                add_prop(cat_health, "Structure integrity", "INVALID (header structure is malformed or invalid)", QColor(0xff, 0xaa, 0x33));
+            else
+                add_prop(cat_health, "Structure integrity", "OK", QColor(0x55, 0xff, 0x55));
+        }
+        QStringList diag_notes;
+        if (!rep.header.file_exists)
+        {
+            diag_notes << "(?) File existence: target archive does not exist or cannot be accessed.";
+        }
+        else if (!rep.header.valid_magic)
+        {
+            diag_notes << "(X) Format signature: invalid magic bytes (not a valid MAGE archive).";
+            diag_notes << QString("(X) Container structure: %1.").arg(QString::fromStdString(rep.header.sanity_notes));
+        }
+        else
+        {
+            diag_notes << "(OK) Format signature: MAGE container format.";
+            if (rep.header.version == 1)
+                diag_notes << "(OK) Container version: v1 (supported).";
+            else
+                diag_notes << QString("(OK) Container version: v%1 (unsupported version).").arg(static_cast<int>(rep.header.version));
+
+            if (rep.header.algo_id <= 2)
+                diag_notes << QString("(OK) Cipher algorithm: %1.").arg(QString::fromStdString(rep.header.algo_name));
+            else
+                diag_notes << QString("(X) Cipher algorithm: unrecognized cipher algorithm ID (%1).").arg(rep.header.algo_id);
+            if (rep.header.compression_algo_id <= 2)
+            {
+                QString cmp = QString::fromStdString(rep.header.compression_algo_name);
+                if (rep.header.compression_algo_id > 0)
+                    cmp += QString(" (level %1)").arg(rep.header.compression_level);
+                diag_notes << QString("(OK) Compression: %1.").arg(cmp);
+            }
+            else
+            {
+                diag_notes << QString("(X) Compression: unrecognized compression algorithm ID (%1).").arg(rep.header.compression_algo_id);
+            }
+            if (rep.header.chunk_size >= 1024 * 1024 && rep.header.chunk_size <= 64 * 1024 * 1024)
+                diag_notes << QString("(OK) Chunk geometry: %1 (within 1MB - 64MBs bounds).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)));
+            else
+                diag_notes << QString("(X) Chunk geometry: %1 (out of bounds, 1MB - 64MBs required).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)));
+            uint64_t mem_bytes = static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024;
+            if (rep.header.memory_cost_kb <= 2 * 1024 * 1024)
+                diag_notes << QString("(OK) Argon2id memory cost: %1 (within 2GBs safety limit).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
+            else
+                diag_notes << QString("(X) Argon2id memory cost: %1 (exceeds 2GBs safety threshold).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
+
+            if (rep.header.time_cost >= 1 && rep.header.time_cost <= 32)
+                diag_notes << QString("(OK) Argon2id time cost: %1 pass(es) (within 32 passes limit).").arg(rep.header.time_cost);
+            else
+                diag_notes << QString("(X) Argon2id time cost: %1 pass(es) (exceeds 32 passes limit).").arg(rep.header.time_cost);
+
+            if (rep.header.parallelism >= 1 && rep.header.parallelism <= 32)
+                diag_notes << QString("(OK) Argon2id parallelism: %1 lane(s) (within 1 - 32 lanes limit).").arg(rep.header.parallelism);
+            else
+                diag_notes << QString("(X) Argon2id parallelism: %1 lane(s) (invalid or excessive lanes).").arg(rep.header.parallelism);
+
+            diag_notes << QString("(OK) Metadata preservation: %1").arg(rep.header.has_metadata ? "enabled." : "disabled.");
+
+            if (rep.header.structure_ok && rep.header.kdf_safe)
+                diag_notes << "(OK) Container health: all parameters standard and valid.";
+            else
+                diag_notes << QString("(X) Container health: %1.").arg(QString::fromStdString(rep.header.sanity_notes));
+        }
+        bool is_healthy = (rep.header.valid_magic && rep.header.structure_ok && rep.header.kdf_safe);
+        QColor diag_color = is_healthy ? QColor(0xa0, 0xa0, 0xa0) : QColor(0xe5, 0xc0, 0x7b);
+        add_prop(cat_health, "Diagnostics / notes", "hover over to see...", diag_color, diag_notes.join("\n"));
+        QTreeWidgetItem *cat_aead = add_category("Cryptographic status");
+        bool is_pending = (rep.verdict == pk::crypto::am_i_evil::__vv_::io_error && rep.verified_chunks == 0 && rep.error_details.empty());
+        if (is_pending)
+        {
+            add_prop(cat_aead, "Audit status", "pending (enter password / keyfile)", QColor(0xaa, 0xaa, 0xaa));
+        }
+        else
+        {
+            QString verdict_str = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
+            QColor verdict_color = (rep.verdict == pk::crypto::am_i_evil::__vv_::success) ? QColor(0x55, 0xff, 0x55) : QColor(0xff, 0x55, 0x55);
+            add_prop(cat_aead, "Verification verdict", verdict_str, verdict_color);
+            add_prop(cat_aead, "AEAD chunks authenticated", QString("%1 / %2").arg(rep.verified_chunks).arg(rep.total_chunks));
+            if (rep.verdict == pk::crypto::am_i_evil::__vv_::success)
+            {
+                add_prop(cat_aead, "Declared original size", QString("%1 (%2)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(rep.dub) + "B")).arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub))));
+                add_prop(cat_aead, "Compression ratio", QString("%1% (%2% saved)").arg(QString::number(rep.compression_ratio_percent, 'f', 1)).arg(QString::number(100.0 - rep.compression_ratio_percent, 'f', 1)));
+                add_prop(cat_aead, "Contained archive entries", QString("%1 regular file(s), %2 folder(s)").arg(rep.regular_files).arg(rep.directories));
+                add_prop(cat_aead, "Path traversal check", "OK", QColor(0x55, 0xff, 0x55));
+            }
+            else if (!rep.error_details.empty())
+            {
+                add_prop(cat_aead, "Failure diagnostics", QString::fromStdString(rep.error_details), QColor(0xff, 0x66, 0x66), QString::fromStdString(rep.error_details));
+            }
+        }
+        adjust_pc();
+    }
+    void cd_am_i_evil::on_verify_integrity()
+    {
+        if (m_reports.empty())
+        {
+            warning(this, "No archives", "Add at least one archive to verify.");
+            return;
+        }
+        if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
+        {
+            warning(this, "Password required", "A password or keyfile is required to verify AEAD cryptographic integrity; container headers are already inspected without a password.");
+            return;
+        }
+        QStringList passed_reports;
+        QStringList failed_reports;
+        for (int i = 0; i < static_cast<int>(m_reports.size()); ++i)
+        {
+            auto &rep = m_reports[i];
+            QString archive_path = QString::fromStdString(rep.header.___filepath.string());
+            QString base_name = QFileInfo(archive_path).fileName();
+            worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::am_i_evil);
+            w->ss_def_verify_params(archive_path, password_v->text(), keyfile_path_v->text());
+            cd_prog_dialog pd(w, this);
+            QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
+            if (pd.exec() == QDialog::Accepted)
+            {
+                rep = w->what_report();
+                if (tree_item)
+                {
+                    tree_item->setText(2, "OK");
+                    tree_item->setToolTip(2, QString("authentic n' verified (OK)\n%1 / %2 chunks verified").arg(rep.verified_chunks).arg(rep.total_chunks));
+                    tree_item->setForeground(2, QColor(0x55, 0xff, 0x55));
+                }
+                QString msg = QString(">> %1:\n"
+                                      "   - Status: %2\n"
+                                      "   - AEAD chunks: %3 / %4 verified\n"
+                                      "   - Uncompressed: %5 (compression: %6%)\n"
+                                      "   - Entries: %7 file(s), %8 folder(s)")
+                                  .arg(base_name)
+                                  .arg(QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict)))
+                                  .arg(rep.verified_chunks)
+                                  .arg(rep.total_chunks)
+                                  .arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub)))
+                                  .arg(QString::number(rep.compression_ratio_percent, 'f', 1))
+                                  .arg(rep.regular_files)
+                                  .arg(rep.directories);
+                passed_reports.append(msg);
+            }
+            else
+            {
+                auto worker_rep = w->what_report();
+                if (worker_rep.header.file_exists)
+                {
+                    rep = worker_rep;
+                }
+                if (rep.error_details.empty())
+                {
+                    rep.error_details = pd.what_err_msg().isEmpty() ? "Integrity check failed" : pd.what_err_msg().toStdString();
+                }
+                if (tree_item)
+                {
+                    QString verdict_lbl = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
+                    tree_item->setText(2, "INVALID");
+                    tree_item->setToolTip(2, verdict_lbl + "\n" + QString::fromStdString(rep.error_details));
+                    tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
+                }
+                QString err = QString::fromStdString(rep.error_details);
+                failed_reports.append(QString(">> %1:\n   - Error: %2").arg(base_name).arg(err));
+            }
+        }
+
+        update_qs();
+        refresh_properties();
+        adjust_qc();
+
+        QString summary;
+        if (!passed_reports.isEmpty())
+        {
+            summary += QString(">>> Verification passed (%1)\n").arg(passed_reports.size());
+            summary += passed_reports.join("\n\n");
+        }
+        if (!failed_reports.isEmpty())
+        {
+            if (!summary.isEmpty())
+                summary += "\n\n";
+            summary += QString(">>> Verification failed (%1)\n").arg(failed_reports.size());
+            summary += failed_reports.join("\n\n");
+        }
+        if (failed_reports.isEmpty())
+        {
+            info(this, "Verification OK", summary);
+        }
+        else if (passed_reports.isEmpty())
+        {
+            error(this, "Verification failed", summary);
+        }
+        else
+        {
+            warning(this, "Partial verification results", summary);
+        }
+    }
+    void cd_am_i_evil::on_export_log()
+    {
+        if (m_reports.empty())
+        {
+            warning(this, "No data", "No archive inspection data to export.");
+            return;
+        }
+        QString save_path = QFileDialog::getSaveFileName(
+            this, "Export verification log", "mage_verification_report.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
+        if (save_path.isEmpty())
+            return;
+        std::string log_content = pk::crypto::am_i_evil::mk_export_log(m_reports);
+        QFile file(save_path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            error(this, "Export failed", QString("Could not open file for writing:\n%1").arg(save_path));
+            return;
+        }
+        QTextStream out(&file);
+        out << QString::fromStdString(log_content);
+        file.close();
+        info(this, "Export succeeded", QString("Verification log successfully saved to:\n%1").arg(save_path));
+    }
+    void cd_am_i_evil::on_close()
+    {
+        accept();
+    }
+    void cd_am_i_evil::adjust_qc()
+    {
+        if (!queue_tree)
+            return;
+        queue_tree->resizeColumnToContents(0);
+        queue_tree->resizeColumnToContents(1);
+        queue_tree->resizeColumnToContents(2);
+        int other_cols = queue_tree->columnWidth(1) + queue_tree->columnWidth(2);
+        int avail = queue_tree->viewport()->width() - other_cols;
+        if (avail > queue_tree->columnWidth(0))
+            queue_tree->setColumnWidth(0, avail);
+    }
+    void cd_am_i_evil::adjust_pc()
+    {
+        if (!pt)
+            return;
+        pt->resizeColumnToContents(0);
+        pt->resizeColumnToContents(1);
+        int min_col0 = 175;
+        if (pt->columnWidth(0) < min_col0)
+            pt->setColumnWidth(0, min_col0);
+        int avail = pt->viewport()->width() - pt->columnWidth(0);
+        if (avail > pt->columnWidth(1))
+            pt->setColumnWidth(1, avail);
+    }
+    void cd_am_i_evil::resizeEvent(QResizeEvent *event)
+    {
+        QDialog::resizeEvent(event);
+        adjust_qc();
+        adjust_pc();
+    }
     cd_settings::cd_settings(QWidget *parent)
         : QDialog(parent)
     {
@@ -1250,9 +1889,11 @@ namespace pk::ui::outs
         chunk_layout->addWidget(new QLabel("Default chunk size:", this));
         chunk_size_used = new QSpinBox(this);
         chunk_size_used->setRange(1, 64);
-        chunk_size_used->setSuffix(" MB");
         chunk_size_used->setValue(pk::cfg::settings::instance().def_chunk_size());
+        chunk_size_used->setSuffix(chunk_size_used->value() == 1 ? "MB" : "MBs");
         chunk_size_used->setContextMenuPolicy(Qt::NoContextMenu);
+        connect(chunk_size_used, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val)
+                { chunk_size_used->setSuffix(val == 1 ? "MB" : "MBs"); });
         chunk_layout->addWidget(chunk_size_used);
         chunk_layout->addStretch();
         layout_gen->addLayout(chunk_layout);
@@ -1323,7 +1964,6 @@ namespace pk::ui::outs
             QObject::connect(anim, &QPropertyAnimation::finished, w, &QLabel::close); });
         layout_gen->addStretch();
         tabs->addTab(tab_gen, "General");
-
         QWidget *tab_ext = new QWidget();
         QFormLayout *form_ext = new QFormLayout(tab_ext);
         ext_behavior = new QComboBox(this);
@@ -1351,7 +1991,7 @@ namespace pk::ui::outs
         algo_combo->addItem("XChaCha20-Poly1305");
         algo_combo->addItem("AES-256-SIV");
         algo_combo->setCurrentIndex(pk::cfg::settings::instance().def_cipher());
-        form_enc->addRow("Default Cipher:", algo_combo);
+        form_enc->addRow("Default cipher:", algo_combo);
         QLabel *aes_ni_label2 = new QLabel(this);
         if (pk::crypto::aes_ni_there())
         {
@@ -1373,15 +2013,17 @@ namespace pk::ui::outs
         s_mem_cost = new QSpinBox(this);
         s_mem_cost->setRange(1, 4096);
         s_mem_cost->setValue(pk::cfg::settings::instance().def_mem_cost() / 1024);
-        s_mem_cost->setSuffix(" MB");
+        s_mem_cost->setSuffix(s_mem_cost->value() == 1 ? "MB" : "MBs");
         s_mem_cost->setContextMenuPolicy(Qt::NoContextMenu);
+        connect(s_mem_cost, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val)
+                { s_mem_cost->setSuffix(val == 1 ? "MB" : "MBs"); });
         s_cores = new QSpinBox(this);
         s_cores->setRange(1, 64);
         s_cores->setValue(pk::cfg::settings::instance().def_cores());
         s_cores->setContextMenuPolicy(Qt::NoContextMenu);
-        form_enc->addRow("Default Argon2ID time cost:", s_tc);
-        form_enc->addRow("Default Argon2ID memory cost:", s_mem_cost);
-        form_enc->addRow("Default Argon2ID parallelism:", s_cores);
+        form_enc->addRow("Default Argon2id time cost:", s_tc);
+        form_enc->addRow("Default Argon2id memory cost:", s_mem_cost);
+        form_enc->addRow("Default Argon2id parallelism:", s_cores);
         tabs->addTab(tab_enc, "Encryption and KDF");
         QWidget *tab_comp = new QWidget();
         QFormLayout *form_comp = new QFormLayout(tab_comp);
