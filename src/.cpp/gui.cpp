@@ -68,7 +68,7 @@ namespace pk::ui
         QMenu *mode_menu = menu_bar->addMenu("Mode");
         QAction *action_create = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "Make archive (encryption)");
         QAction *action_decrypt = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "Decrypt archive");
-        QAction *action_verify = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), "Verify archive (integrity)");
+        QAction *action_verify = mode_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/verify.svg")), "Verify archive (integrity)");
         QMenu *action_menu = menu_bar->addMenu("Action");
         QAction *action_settings = action_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/settings.svg")), "Settings");
         QAction *action_quit = action_menu->addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/quit.svg")), "Quit");
@@ -87,7 +87,7 @@ namespace pk::ui
         QVBoxLayout *layout = new QVBoxLayout(central);
         btn_mk = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/mk_archive.svg")), "      Create archive", this);
         btn_decrypt = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/decrypt.svg")), "      Decrypt archive", this);
-        btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), "      Verify archive", this);
+        btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/verify.svg")), "      Verify archive", this);
         btn_mk->setFixedSize(200, 45);
         btn_decrypt->setFixedSize(200, 45);
         btn_verify->setFixedSize(200, 45);
