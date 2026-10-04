@@ -1,5 +1,5 @@
 ## tooltips
-## last updated: 01/10/2026
+## last updated: 04/10/2026
 ## dev comments are parsed and indicated with a "#" and anything after it
 ## to define a text segment, you use the following;
 
@@ -158,6 +158,12 @@ Overwrite rules.
 Ask: MAGE will ask you what to do for each file conflict.
 Skip: MAGE will silently skip files that already exist.
 Overwrite: MAGE will automatically overwrite existing files without prompting.
+"""
+
+verify_archive = """
+Verify archive integrity.
+
+Inspect archive container parameters without a password, or provide a password to cryptographically authenticate every chunk's AEAD MAC tag and verify stream integrity without writing files to disk.
 """
 
 ## end
