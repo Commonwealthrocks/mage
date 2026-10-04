@@ -1,5 +1,5 @@
 ## changelogs.txt
-## last updated: 08/09/2026
+## last updated: 04/10/2026
 ## scroll all the way down for latest logs from now on
 
 VERSION 0.1a - 19/06/2026 [ STARTED ON; 28/05/2026 ]
@@ -96,3 +96,38 @@ VERSION 0.5a - 08/09/2026 [ STARTED ON; 28/08/2026]
 - Fix directory flattening bug where folder contents lost their parent directory when
   extracting multiple files / folders at once.
 - Added helpful tooltip in settings dialog for tooltips about said settings.
+
+VERSION 0.6a - 04/10/2026 [ STARTED ON; 09/09/2026 ]
+- Added archive verification mode ("am_i_evil") to inspect and authenticate MAGE archives
+  without needing to decrypt them to disk.
+- Container headers can now be inspected without a password, validating magic, layout
+  and KDF parameters safely.
+- Added full cryptographic AEAD verification to authenticate ciphertext chunk integrity
+  against corruption or tampering.
+- Added per-archive custom entropy sourcing (password and / or keyfile) for both
+  verification and decryption with [P], [K], [P+K] queue badges.
+- Added custom entropy editor dialog with tab cycling, full path preview, and an "apply
+  to all" option.
+- Added context menu options in queue trees to view, edit, or wipe custom credentials.
+- Added Windows context menu integration for verifying archives ("Verify archive with MAGE...").
+- Added CLI support for archive verification (--verify <path>).
+- Added verification diagnostic log export (.log / .txt).
+- Added new verification mode icon (verify.svg) to replace placeholder ok.svg.
+- Added extraction behavior settings: "Create archive folder", "Extract here (flat)",
+  and "Smart-ish extract".
+- Added conflict rules for extraction ("Ask", "Skip", "Overwrite") along with batch options.
+- Added auto-open output directory toggle for decryption.
+- Added dedicated Extraction tab in settings dialog.
+- Hardened path resolution against TOCTOU symlink traversal attacks and NTFS junctions.
+- Enforced KDF sanity limits to prevent denial-of-service via malicious Argon2id parameters.
+- Re-worked tooltip rendering into styled HTML cards with max-width wrapping and dark theme.
+- Fixed ugly ass tab scroll arrow buttons and added smooth mouse wheel cycling for all tab bars.
+- Resized settings dialog so all 5 tabs fit without crowding.
+- Locked window sizes with fixed size on all new dialogs to keep layouts intact.
+- Overhauled internal debug console (CTRL + SHIFT + I) with seamless dark terminal styling,
+  syntax highlighted log messages and clear / export buttons.
+- Hooked up CTRL + SHIFT + V shortcut for opening archive verification.
+- Enforced secure memory wiping (pk::mem_::secure_wipe) across passwords, keyfiles
+  and custom entropy buffers upon dialog close.
+
+## end
