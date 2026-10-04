@@ -4,6 +4,7 @@
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
 #include "../.hpp/keyfile.hpp"
+#include "../.hpp/secure_memory.hpp"
 #include "../.hpp/outs.hpp"
 #include "../.hpp/sfx.hpp"
 #include <QApplication>
@@ -125,6 +126,11 @@ namespace pk::ui::worker
             else
             {
                 final_password = pk::mem_::secure_string(password.begin(), password.end());
+            }
+            if (!password.empty())
+            {
+                pk::mem_::secure_wipe(password.data(), password.size());
+                password.clear();
             }
             if (__mode == mode::pack)
             {
@@ -403,6 +409,10 @@ namespace pk::ui::worker
                             emit pr_details(processed, total);
                         }
                         emit current_ac0(QString::fromStdString(status));
+                    },
+                    [this]() -> bool
+                    {
+                        return isInterruptionRequested();
                     });
                 if (verify_rep.verdict != pk::crypto::am_i_evil::__vv_::success)
                 {
