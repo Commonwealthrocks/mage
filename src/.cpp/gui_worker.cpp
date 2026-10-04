@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 01/10/2026
+// last updated: 04/10/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -64,9 +64,20 @@ namespace pk::ui::worker
         ext_behavior_v = ext_beh;
         ext_overwrite_v = ext_ow;
     }
+    void crypto_worker::ss_def_verify_params(const QString &in, const QString &pwd, const QString &kf)
+    {
+        in_path = in.toStdString();
+        password = pwd.toStdString();
+        keyfile_path = kf.toStdString();
+    }
     void crypto_worker::run()
     {
-        pk::core::logger::log("crypto worker thread started; mode: " + std::string(__mode == mode::pack ? "pack." : "unpack."));
+        std::string mode_str = "pack.";
+        if (__mode == mode::unpack)
+            mode_str = "unpack.";
+        else if (__mode == mode::am_i_evil)
+            mode_str = "am_i_evil (verify).";
+        pk::core::logger::log("crypto worker thread started; mode: " + mode_str);
         try
         {
             // emit the cc for better progress reporting in the
@@ -242,7 +253,6 @@ namespace pk::ui::worker
                             }
                             if (rel_str.empty() || rel_str == ".")
                                 rel_str = dir_entry.path().filename().generic_string();
-
                             ae.relative_path = (abn___ / root_path.filename() / rel_str).generic_string();
                             if (__cp_metadata)
                             {
@@ -276,7 +286,6 @@ namespace pk::ui::worker
                     else
                     {
                         uint64_t fsize = std::filesystem::file_size(root_path);
-
                         pk::crypto::format::archive_entry ae;
                         ae.source_path = root_path;
                         ae.relative_path = (abn___ / root_path.filename()).generic_string();
@@ -322,7 +331,7 @@ namespace pk::ui::worker
                 int remembered_choice = -1;
                 pk::crypto::format::unpack_archive(
                     in_path, output_dir, final_password, ext_behavior_v, ext_overwrite_v,
-                    [&remembered_choice](const std::string &file_path) -> int
+                    [&remembered_choice](const std::string &___filepath) -> int
                     {
                         if (remembered_choice != -1)
                         {
@@ -330,12 +339,12 @@ namespace pk::ui::worker
                         }
                         int choice = 0;
                         QMetaObject::invokeMethod(
-                            qApp, [&choice, &remembered_choice, file_path]()
+                            qApp, [&choice, &remembered_choice, ___filepath]()
                             {
                                 pk::ui::sfx::play_info();
                                 QMessageBox msgBox;
                                 msgBox.setWindowTitle("File Conflict");
-                                msgBox.setText(QString("The file already exists:\n%1\n\nWhat would you like to do?").arg(QString::fromStdString(file_path)));
+                                msgBox.setText(QString("The file already exists:\n%1\n\nWhat would you like to do?").arg(QString::fromStdString(___filepath)));
                                 QPushButton *btnOver = msgBox.addButton("Overwrite", QMessageBox::ActionRole);
                                 QPushButton *btnOverAll = msgBox.addButton("Overwrite all", QMessageBox::ActionRole);
                                 QPushButton *btnSkip = msgBox.addButton("Skip", QMessageBox::ActionRole);
@@ -378,6 +387,29 @@ namespace pk::ui::worker
                             Qt::BlockingQueuedConnection);
                         return proceed; }, status_cb);
                 pk::core::logger::log("worker successfully unpacked archive.");
+            }
+            else if (__mode == mode::am_i_evil)
+            {
+                pk::core::logger::log("starting archive verification (am_i_evil)...");
+                emit current_ac0("Verifying archive...");
+                verify_rep = pk::crypto::am_i_evil::verify_archive(
+                    in_path, final_password,
+                    [this](uint64_t processed, uint64_t total, const std::string &status)
+                    {
+                        if (total > 0)
+                        {
+                            int p = static_cast<int>((processed * 100) / total);
+                            emit progress(p);
+                            emit pr_details(processed, total);
+                        }
+                        emit current_ac0(QString::fromStdString(status));
+                    });
+                if (verify_rep.verdict != pk::crypto::am_i_evil::__vv_::success)
+                {
+                    std::string err = verify_rep.error_details.empty() ? pk::crypto::am_i_evil::verdict_to_str(verify_rep.verdict) : verify_rep.error_details;
+                    throw std::runtime_error(err);
+                }
+                pk::core::logger::log("worker successfully verified archive.");
             }
             emit success();
         }
