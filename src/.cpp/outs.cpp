@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QTabWidget>
+#include <QTabBar>
+#include <QWheelEvent>
 #include "../.hpp/keyfile.hpp"
 #include <QStackedWidget>
 #include <QDragEnterEvent>
@@ -59,6 +61,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <unordered_set>
+#include <algorithm>
 #include "../.hpp/secure_memory.hpp"
 namespace pk::ui::outs
 {
@@ -502,12 +505,12 @@ namespace pk::ui::outs
         {
             pk::crypto::keyfile::generate(path_input->text().toStdString());
             gen_path_ = path_input->text();
-            info(this, "Success", "Keyfile successfully generated.");
+            info(this, "OK", "Keyfile successfully generated.");
             accept();
         }
         catch (const std::exception &e)
         {
-            error(this, "Error", QString("Failed to generate keyfile: ") + e.what());
+            error(this, "ERROR", QString("Failed to generate keyfile: ") + e.what());
         }
     }
     void cd_keyfile::on_cancel()
@@ -937,7 +940,7 @@ namespace pk::ui::outs
         cd_prog_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
-            info(this, "Success", "Archive successfully created.");
+            info(this, "OK", "Archive successfully created.");
             accept();
         }
         else
@@ -952,6 +955,272 @@ namespace pk::ui::outs
     {
         reject();
     }
+    void custom_entropy::wipe()
+    {
+        if (!password.isEmpty())
+        {
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(password.data())), password.size() * sizeof(QChar));
+            password.clear();
+        }
+        has_password = false;
+        keyfile_path.clear();
+        has_keyfile = false;
+    }
+    cd_gib_entropy::cd_gib_entropy(const QList<QPair<QString, custom_entropy>> &targets, QWidget *parent)
+        : QDialog(parent)
+    {
+        setWindowFlags(windowFlags() | Qt::Window);
+        dont_burn_my_eyes(this);
+        QVBoxLayout *main_layout = new QVBoxLayout(this);
+        main_layout->setSpacing(8);
+        main_layout->setContentsMargins(10, 10, 10, 10);
+        if (targets.size() == 1)
+        {
+            QString fn = QFileInfo(targets[0].first).fileName();
+            QString fn_elided = fontMetrics().elidedText(fn, Qt::ElideMiddle, 240);
+            setWindowTitle("Set entropy - " + fn_elided);
+            resize(480, 270);
+            setMinimumSize(440, 250);
+            archive_tab_ui ui_ref;
+            QWidget *page = create_page(targets[0].first, targets[0].second, ui_ref);
+            m_tab_uis.append(ui_ref);
+            main_layout->addWidget(page, 1);
+        }
+        else
+        {
+            setWindowTitle(QString("Set entropy - %1 archives selected").arg(targets.size()));
+            resize(540, 360);
+            setMinimumSize(480, 320);
+            m_tabs = new QTabWidget(this);
+            m_tabs->setUsesScrollButtons(true);
+            m_tabs->setElideMode(Qt::ElideMiddle);
+            m_tabs->setStyleSheet(
+                "QTabBar::tab { max-width: 150px; min-width: 60px; padding: 5px 10px; } "
+                "QTabBar QToolButton { width: 0px; height: 0px; max-width: 0px; max-height: 0px; padding: 0px; margin: 0px; border: none; background: transparent; }");
+            if (m_tabs->tabBar())
+                m_tabs->tabBar()->installEventFilter(this);
+
+            for (int i = 0; i < targets.size(); ++i)
+            {
+                QString fn = QFileInfo(targets[i].first).fileName();
+                archive_tab_ui ui_ref;
+                QWidget *page = create_page(targets[i].first, targets[i].second, ui_ref);
+                m_tab_uis.append(ui_ref);
+                QString tab_title = fontMetrics().elidedText(fn, Qt::ElideMiddle, 130);
+                m_tabs->addTab(page, tab_title);
+                m_tabs->setTabToolTip(i, QString("%1\n%2").arg(fn, targets[i].first));
+            }
+            main_layout->addWidget(m_tabs, 1);
+
+            QPushButton *btn_apply_all = new QPushButton(
+                QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")),
+                " Apply current tab's entropy to all selected archives", this);
+            btn_apply_all->setToolTip("Copy the password and keyfile settings from the active tab to all other tabs in this selection");
+            connect(btn_apply_all, &QPushButton::clicked, this, &cd_gib_entropy::on_apply_to_all);
+            main_layout->addWidget(btn_apply_all);
+        }
+        QHBoxLayout *action_layout = new QHBoxLayout();
+        action_layout->addStretch();
+        QPushButton *btn_save = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Save", this);
+        btn_save->setDefault(true);
+        QPushButton *btn_cancel = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Cancel", this);
+        action_layout->addWidget(btn_save);
+        action_layout->addWidget(btn_cancel);
+        main_layout->addLayout(action_layout);
+        connect(btn_save, &QPushButton::clicked, this, &cd_gib_entropy::on_save);
+        connect(btn_cancel, &QPushButton::clicked, this, &QDialog::reject);
+    }
+    bool cd_gib_entropy::eventFilter(QObject *watched, QEvent *event)
+    {
+        if (m_tabs && m_tabs->tabBar() && watched == m_tabs->tabBar() && event->type() == QEvent::Wheel)
+        {
+            QWheelEvent *we = static_cast<QWheelEvent *>(event);
+            int delta = we->angleDelta().y();
+            if (delta == 0)
+                delta = we->angleDelta().x();
+            if (delta != 0)
+            {
+                int count = m_tabs->count();
+                if (count > 1)
+                {
+                    int cur = m_tabs->currentIndex();
+                    int next = cur + (delta < 0 ? 1 : -1);
+                    next = qBound(0, next, count - 1);
+                    if (next != cur)
+                        m_tabs->setCurrentIndex(next);
+                }
+                return true;
+            }
+        }
+        return QDialog::eventFilter(watched, event);
+    }
+    QWidget *cd_gib_entropy::create_page(const QString &file_path, const custom_entropy &entropy, archive_tab_ui &ui_ref)
+    {
+        QWidget *page = new QWidget(this);
+        QVBoxLayout *layout = new QVBoxLayout(page);
+        layout->setSpacing(6);
+        layout->setContentsMargins(8, 8, 8, 8);
+        ui_ref.file_path = file_path;
+        QHBoxLayout *path_layout = new QHBoxLayout();
+        QLabel *lbl_path_tag = new QLabel("Archive:", page);
+        lbl_path_tag->setStyleSheet("font-weight: bold; font-size: 11px;");
+        QLineEdit *txt_current_path = new QLineEdit(page);
+        txt_current_path->setReadOnly(true);
+        txt_current_path->setText(file_path);
+        txt_current_path->setToolTip(file_path);
+        txt_current_path->setContextMenuPolicy(Qt::NoContextMenu);
+        QPushButton *btn_copy_path = new QPushButton("Copy", page);
+        btn_copy_path->setToolTip("Copy full archive path to clipboard");
+        connect(btn_copy_path, &QPushButton::clicked, page, [file_path]()
+                { QApplication::clipboard()->setText(file_path); });
+        path_layout->addWidget(lbl_path_tag);
+        path_layout->addWidget(txt_current_path, 1);
+        path_layout->addWidget(btn_copy_path);
+        layout->addLayout(path_layout);
+        QGroupBox *grp_pwd = new QGroupBox("Custom password", page);
+        grp_pwd->setStyleSheet(
+            "QGroupBox { border: none; font-weight: bold; font-size: 11px; margin-top: 2px; padding-top: 12px; } "
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0px; color: #ffffff; }");
+        QVBoxLayout *pwd_layout = new QVBoxLayout(grp_pwd);
+        pwd_layout->setSpacing(4);
+        pwd_layout->setContentsMargins(0, 4, 0, 0);
+        ui_ref.chk_custom_pwd = new QCheckBox("Specify custom password for this archive", grp_pwd);
+        ui_ref.chk_custom_pwd->setChecked(entropy.has_password);
+        pwd_layout->addWidget(ui_ref.chk_custom_pwd);
+        ui_ref.txt_pwd = new QLineEdit(grp_pwd);
+        ui_ref.txt_pwd->setEchoMode(QLineEdit::Password);
+        ui_ref.txt_pwd->setContextMenuPolicy(Qt::NoContextMenu);
+        ui_ref.txt_pwd->setPlaceholderText("Enter custom archive password...");
+        ui_ref.txt_pwd->setEnabled(entropy.has_password);
+        if (entropy.has_password)
+            ui_ref.txt_pwd->setText(entropy.password);
+        QAction *warn_action = ui_ref.txt_pwd->addAction(
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/warn.svg")),
+            QLineEdit::TrailingPosition);
+        warn_action->setToolTip("CAPS lock is enabled, if you weren't aware.");
+        warn_action->setVisible(false);
+        QTimer *caps_timer = new QTimer(ui_ref.txt_pwd);
+        connect(caps_timer, &QTimer::timeout, ui_ref.txt_pwd, [warn_action]()
+                {
+#ifdef _WIN32
+                    bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+                    warn_action->setVisible(caps);
+#endif
+                });
+        caps_timer->start(100);
+        QAction *toggle_action = ui_ref.txt_pwd->addAction(
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")),
+            QLineEdit::TrailingPosition);
+        QLineEdit *pwd_ptr = ui_ref.txt_pwd;
+        connect(toggle_action, &QAction::triggered, pwd_ptr, [pwd_ptr, toggle_action]()
+                {
+            if (pwd_ptr->echoMode() == QLineEdit::Password) {
+                pwd_ptr->setEchoMode(QLineEdit::Normal);
+                toggle_action->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/hide_password.svg")));
+            } else {
+                pwd_ptr->setEchoMode(QLineEdit::Password);
+                toggle_action->setIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/view_password.svg")));
+            } });
+        connect(ui_ref.chk_custom_pwd, &QCheckBox::toggled, ui_ref.txt_pwd, &QLineEdit::setEnabled);
+        pwd_layout->addWidget(ui_ref.txt_pwd);
+        layout->addWidget(grp_pwd);
+        QGroupBox *grp_kf = new QGroupBox("Custom keyfile", page);
+        grp_kf->setStyleSheet(
+            "QGroupBox { border: none; border-top: 1px solid #383838; font-weight: bold; font-size: 11px; margin-top: 8px; padding-top: 12px; } "
+            "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 4px; color: #ffffff; }");
+        QVBoxLayout *kf_layout = new QVBoxLayout(grp_kf);
+        kf_layout->setSpacing(4);
+        kf_layout->setContentsMargins(0, 4, 0, 0);
+        ui_ref.chk_custom_kf = new QCheckBox("Specify custom keyfile for this archive", grp_kf);
+        ui_ref.chk_custom_kf->setChecked(entropy.has_keyfile);
+        kf_layout->addWidget(ui_ref.chk_custom_kf);
+        QHBoxLayout *kf_row = new QHBoxLayout();
+        ui_ref.txt_kf = new QLineEdit(grp_kf);
+        ui_ref.txt_kf->setReadOnly(true);
+        ui_ref.txt_kf->setPlaceholderText("Select keyfile (optional)...");
+        ui_ref.txt_kf->setEnabled(entropy.has_keyfile);
+        if (entropy.has_keyfile)
+            ui_ref.txt_kf->setText(entropy.keyfile_path);
+        ui_ref.btn_browse_kf = new QPushButton("Browse", grp_kf);
+        ui_ref.btn_clear_kf = new QPushButton("Clear", grp_kf);
+        ui_ref.btn_browse_kf->setEnabled(entropy.has_keyfile);
+        ui_ref.btn_clear_kf->setEnabled(entropy.has_keyfile);
+        connect(ui_ref.chk_custom_kf, &QCheckBox::toggled, ui_ref.txt_kf, &QLineEdit::setEnabled);
+        connect(ui_ref.chk_custom_kf, &QCheckBox::toggled, ui_ref.btn_browse_kf, &QPushButton::setEnabled);
+        connect(ui_ref.chk_custom_kf, &QCheckBox::toggled, ui_ref.btn_clear_kf, &QPushButton::setEnabled);
+        QLineEdit *kf_ptr = ui_ref.txt_kf;
+        connect(ui_ref.btn_browse_kf, &QPushButton::clicked, page, [this, kf_ptr]()
+                {
+            QString f = QFileDialog::getOpenFileName(this, "Select custom keyfile", "", "MAGE keyfiles (*.mgkx);; All files (*.*)");
+            if (!f.isEmpty())
+                kf_ptr->setText(f); });
+        connect(ui_ref.btn_clear_kf, &QPushButton::clicked, page, [kf_ptr]()
+                { kf_ptr->clear(); });
+        kf_row->addWidget(ui_ref.txt_kf);
+        kf_row->addWidget(ui_ref.btn_browse_kf);
+        kf_row->addWidget(ui_ref.btn_clear_kf);
+        kf_layout->addLayout(kf_row);
+        layout->addWidget(grp_kf);
+        layout->addStretch();
+        return page;
+    }
+    void cd_gib_entropy::on_apply_to_all()
+    {
+        if (!m_tabs || m_tab_uis.isEmpty())
+            return;
+
+        int cur = m_tabs->currentIndex();
+        if (cur < 0 || cur >= m_tab_uis.size())
+            return;
+        const auto &src = m_tab_uis[cur];
+        bool pwd_checked = src.chk_custom_pwd->isChecked();
+        QString pwd_text = src.txt_pwd->text();
+        bool kf_checked = src.chk_custom_kf->isChecked();
+        QString kf_text = src.txt_kf->text();
+        for (int i = 0; i < m_tab_uis.size(); ++i)
+        {
+            if (i == cur)
+                continue;
+            m_tab_uis[i].chk_custom_pwd->setChecked(pwd_checked);
+            m_tab_uis[i].txt_pwd->setText(pwd_text);
+            m_tab_uis[i].chk_custom_kf->setChecked(kf_checked);
+            m_tab_uis[i].txt_kf->setText(kf_text);
+        }
+
+        pk::ui::sfx::play_info();
+    }
+    void cd_gib_entropy::on_save()
+    {
+        m_results.clear();
+        for (const auto &ui : m_tab_uis)
+        {
+            custom_entropy ce;
+            if (ui.chk_custom_pwd && ui.chk_custom_pwd->isChecked() && !ui.txt_pwd->text().isEmpty())
+            {
+                ce.has_password = true;
+                ce.password = ui.txt_pwd->text();
+            }
+            if (ui.chk_custom_kf && ui.chk_custom_kf->isChecked() && !ui.txt_kf->text().isEmpty())
+            {
+                ce.has_keyfile = true;
+                ce.keyfile_path = ui.txt_kf->text();
+            }
+            m_results.append(ce);
+        }
+        accept();
+    }
+    cd_gib_entropy::~cd_gib_entropy()
+    {
+        for (auto &ui : m_tab_uis)
+        {
+            if (ui.txt_pwd && !ui.txt_pwd->text().isEmpty())
+            {
+                QString s = ui.txt_pwd->text();
+                pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+                ui.txt_pwd->clear();
+            }
+        }
+    }
     cd_decrypt_archive::cd_decrypt_archive(QWidget *parent, const QString &ini_path)
         : QDialog(parent)
     {
@@ -964,6 +1233,22 @@ namespace pk::ui::outs
         if (!ini_path.isEmpty())
             add_path(ini_path);
     }
+    cd_decrypt_archive::~cd_decrypt_archive()
+    {
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
+    }
+    void cd_decrypt_archive::refresh_item_display(QListWidgetItem *item, const QString &path)
+    {
+        item->setToolTip(path);
+        QString display = path;
+        if (__custom_entropy_.contains(path) && __custom_entropy_[path].has_any())
+        {
+            display += "  " + __custom_entropy_[path].badge_tag();
+        }
+        item->setText(display);
+    }
     void cd_decrypt_archive::add_path(const QString &path)
     {
         if (QFileInfo(path).isDir())
@@ -973,10 +1258,13 @@ namespace pk::ui::outs
             canonical = QDir::cleanPath(path);
         for (int i = 0; i < archive_list->count(); ++i)
         {
-            if (archive_list->item(i)->text() == canonical)
+            QString item_path = archive_list->item(i)->toolTip().isEmpty() ? archive_list->item(i)->text() : archive_list->item(i)->toolTip();
+            if (item_path == canonical)
                 return;
         }
-        archive_list->addItem(canonical);
+        QListWidgetItem *item = new QListWidgetItem();
+        archive_list->addItem(item);
+        refresh_item_display(item, canonical);
         update_default_path(canonical);
     }
     void cd_decrypt_archive::setup_ui()
@@ -986,6 +1274,9 @@ namespace pk::ui::outs
         QVBoxLayout *archives_layout = new QVBoxLayout(group_archives);
         archive_list = new QListWidget(this);
         archive_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        archive_list->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        archive_list->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(archive_list, &QListWidget::customContextMenuRequested, this, &cd_decrypt_archive::on_ls_cm);
         QHBoxLayout *list_btn_layout = new QHBoxLayout();
         QPushButton *btn_add = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/add.svg")), " Add files", this);
         QPushButton *btn_remove = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), " Remove", this);
@@ -1119,11 +1410,155 @@ namespace pk::ui::outs
     void cd_decrypt_archive::on_remove_files()
     {
         for (QListWidgetItem *item : archive_list->selectedItems())
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            if (__custom_entropy_.contains(p))
+            {
+                __custom_entropy_[p].wipe();
+                __custom_entropy_.remove(p);
+            }
             delete item;
+        }
     }
     void cd_decrypt_archive::on_clear_all()
     {
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
         archive_list->clear();
+    }
+    void cd_decrypt_archive::on_ls_cm(const QPoint &pos)
+    {
+        QList<QListWidgetItem *> selected = archive_list->selectedItems();
+        if (selected.isEmpty())
+            return;
+        QMenu menu(this);
+        bool any_has_entropy = false;
+        bool any_has_pwd = false;
+        bool any_has_kf = false;
+        for (QListWidgetItem *item : selected)
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            if (__custom_entropy_.contains(p))
+            {
+                const auto &ce = __custom_entropy_[p];
+                if (ce.has_any())
+                    any_has_entropy = true;
+                if (ce.has_password)
+                    any_has_pwd = true;
+                if (ce.has_keyfile)
+                    any_has_kf = true;
+            }
+        }
+        QString action_text = any_has_entropy ? "View / edit custom entropy..." : "Source custom password / keyfile...";
+        QAction *act_source = menu.addAction(
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/key.svg")),
+            action_text);
+        connect(act_source, &QAction::triggered, this, &cd_decrypt_archive::on_src_ce);
+        if (any_has_pwd)
+        {
+            QAction *act_rm_pwd = menu.addAction("Remove custom password...");
+            connect(act_rm_pwd, &QAction::triggered, this, &cd_decrypt_archive::on_rm_cp);
+        }
+        if (any_has_kf)
+        {
+            QAction *act_rm_kf = menu.addAction("Remove custom keyfile...");
+            connect(act_rm_kf, &QAction::triggered, this, &cd_decrypt_archive::on_rm_ck);
+        }
+        if (any_has_entropy)
+        {
+            QAction *act_rm_all = menu.addAction("Remove all custom entropy...");
+            connect(act_rm_all, &QAction::triggered, this, &cd_decrypt_archive::on_rm_all);
+        }
+        menu.addSeparator();
+        QAction *act_remove = menu.addAction(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), "Remove from list");
+        connect(act_remove, &QAction::triggered, this, &cd_decrypt_archive::on_remove_files);
+        menu.exec(archive_list->viewport()->mapToGlobal(pos));
+    }
+    void cd_decrypt_archive::on_src_ce()
+    {
+        QList<QListWidgetItem *> selected = archive_list->selectedItems();
+        if (selected.isEmpty())
+            return;
+        QList<QPair<QString, custom_entropy>> targets;
+        for (QListWidgetItem *item : selected)
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            custom_entropy ce;
+            if (__custom_entropy_.contains(p))
+                ce = __custom_entropy_[p];
+            targets.append(qMakePair(p, ce));
+        }
+        cd_gib_entropy dlg(targets, this);
+        if (dlg.exec() == QDialog::Accepted)
+        {
+            QList<custom_entropy> results = dlg.get_results();
+            for (int i = 0; i < targets.size() && i < results.size(); ++i)
+            {
+                QString p = targets[i].first;
+                if (__custom_entropy_.contains(p))
+                    __custom_entropy_[p].wipe();
+
+                if (results[i].has_any())
+                    __custom_entropy_[p] = results[i];
+                else
+                    __custom_entropy_.remove(p);
+            }
+            for (QListWidgetItem *item : selected)
+            {
+                QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+                refresh_item_display(item, p);
+            }
+        }
+    }
+    void cd_decrypt_archive::on_rm_cp()
+    {
+        for (QListWidgetItem *item : archive_list->selectedItems())
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            if (__custom_entropy_.contains(p))
+            {
+                auto &ce = __custom_entropy_[p];
+                if (!ce.password.isEmpty())
+                {
+                    pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(ce.password.data())), ce.password.size() * sizeof(QChar));
+                    ce.password.clear();
+                }
+                ce.has_password = false;
+                if (!ce.has_any())
+                    __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
+    }
+    void cd_decrypt_archive::on_rm_ck()
+    {
+        for (QListWidgetItem *item : archive_list->selectedItems())
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            if (__custom_entropy_.contains(p))
+            {
+                auto &ce = __custom_entropy_[p];
+                ce.keyfile_path.clear();
+                ce.has_keyfile = false;
+                if (!ce.has_any())
+                    __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
+    }
+    void cd_decrypt_archive::on_rm_all()
+    {
+        for (QListWidgetItem *item : archive_list->selectedItems())
+        {
+            QString p = item->toolTip().isEmpty() ? item->text() : item->toolTip();
+            if (__custom_entropy_.contains(p))
+            {
+                __custom_entropy_[p].wipe();
+                __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
     }
     void cd_decrypt_archive::on_browse_output()
     {
@@ -1143,10 +1578,24 @@ namespace pk::ui::outs
             warning(this, "ERROR", "Specify an output directory first.");
             return;
         }
-        if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
+        bool global_has_entropy = !password_v->text().isEmpty() || !keyfile_path_v->text().isEmpty();
+        if (!global_has_entropy)
         {
-            warning(this, "ERROR", "You must provide either a password or a keyfile.");
-            return;
+            bool all_have_custom = true;
+            for (int i = 0; i < archive_list->count(); ++i)
+            {
+                QString p = archive_list->item(i)->toolTip().isEmpty() ? archive_list->item(i)->text() : archive_list->item(i)->toolTip();
+                if (!__custom_entropy_.contains(p) || !__custom_entropy_[p].has_any())
+                {
+                    all_have_custom = false;
+                    break;
+                }
+            }
+            if (!all_have_custom)
+            {
+                warning(this, "ERROR", "You must provide a password or keyfile (either globally or custom per-archive).");
+                return;
+            }
         }
         QString base_out = output_dir_->text();
         if (!QFileInfo::exists(base_out) || !QFileInfo(base_out).isDir())
@@ -1159,10 +1608,26 @@ namespace pk::ui::outs
         QStringList failed_reasons;
         for (int i = 0; i < archive_list->count(); ++i)
         {
-            QString archive_path = archive_list->item(i)->text();
+            QString archive_path = archive_list->item(i)->toolTip().isEmpty() ? archive_list->item(i)->text() : archive_list->item(i)->toolTip();
             QString base_name = QFileInfo(archive_path).completeBaseName();
+            QString eff_pwd = password_v->text();
+            QString eff_kf = keyfile_path_v->text();
+            if (__custom_entropy_.contains(archive_path))
+            {
+                const auto &ce = __custom_entropy_[archive_path];
+                if (ce.has_password)
+                    eff_pwd = ce.password;
+                if (ce.has_keyfile)
+                    eff_kf = ce.keyfile_path;
+            }
+            if (eff_pwd.isEmpty() && eff_kf.isEmpty())
+            {
+                failed_names.append(base_name);
+                failed_reasons.append("No password or keyfile provided for this archive.");
+                continue;
+            }
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
-            w->ss_def_unpk_params(archive_path, base_out, password_v->text(), keyfile_path_v->text(), ext_behavior->currentIndex(), ext_overwrite->currentIndex());
+            w->ss_def_unpk_params(archive_path, base_out, eff_pwd, eff_kf, ext_behavior->currentIndex(), ext_overwrite->currentIndex());
             cd_prog_dialog pd(w, this);
             if (pd.exec() == QDialog::Accepted)
             {
@@ -1187,15 +1652,15 @@ namespace pk::ui::outs
         }
         if (failed_names.isEmpty())
         {
-            info(this, "Done", summary);
+            info(this, "OK", summary);
         }
         else if (succeeded.isEmpty())
         {
-            error(this, "All failed", summary);
+            error(this, "ERROR", summary);
         }
         else
         {
-            warning(this, "Partially done", summary);
+            warning(this, "ERROR...?", summary);
         }
 
         if (!succeeded.isEmpty())
@@ -1204,11 +1669,29 @@ namespace pk::ui::outs
             {
                 QDesktopServices::openUrl(QUrl::fromLocalFile(base_out));
             }
+            if (!password_v->text().isEmpty())
+            {
+                QString s = password_v->text();
+                pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+                password_v->clear();
+            }
+            for (auto &ce : __custom_entropy_)
+                ce.wipe();
+            __custom_entropy_.clear();
             accept();
         }
     }
     void cd_decrypt_archive::on_cancel()
     {
+        if (!password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
         reject();
     }
     cd_am_i_evil::cd_am_i_evil(QWidget *parent, const QString &ini_path)
@@ -1227,6 +1710,26 @@ namespace pk::ui::outs
                            {
             adjust_qc();
             adjust_pc(); });
+    }
+    cd_am_i_evil::~cd_am_i_evil()
+    {
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
+    }
+    void cd_am_i_evil::refresh_item_display(QTreeWidgetItem *item, const QString &path)
+    {
+        item->setToolTip(0, path);
+        QString fn = QFileInfo(path).fileName();
+        if (__custom_entropy_.contains(path) && __custom_entropy_[path].has_any())
+        {
+            QString badge = __custom_entropy_[path].badge_tag();
+            item->setText(0, QString("%1  %2").arg(fn, badge));
+        }
+        else
+        {
+            item->setText(0, fn);
+        }
     }
     void cd_am_i_evil::add_path(const QString &path)
     {
@@ -1266,16 +1769,13 @@ namespace pk::ui::outs
                 continue;
 
             existing_paths.insert(canon_std);
-
             pk::crypto::am_i_evil::verification_report rep;
             rep.header = pk::crypto::am_i_evil::view_header(canon_std);
             rep.total_chunks = rep.header.est_chunks;
             rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
             m_reports.push_back(rep);
-
             QTreeWidgetItem *item = new QTreeWidgetItem();
-            item->setText(0, QFileInfo(canonical).fileName());
-            item->setToolTip(0, canonical);
+            refresh_item_display(item, canonical);
             if (!rep.header.file_exists)
             {
                 item->setText(1, "INVALID");
@@ -1299,12 +1799,10 @@ namespace pk::ui::outs
             item->setForeground(2, QColor(0xaa, 0xaa, 0xaa));
             item->setTextAlignment(1, Qt::AlignCenter);
             item->setTextAlignment(2, Qt::AlignCenter);
-
             new_items.append(item);
             if (!first_new_item)
                 first_new_item = item;
         }
-
         if (!new_items.isEmpty())
         {
             queue_tree->addTopLevelItems(new_items);
@@ -1313,9 +1811,7 @@ namespace pk::ui::outs
                 queue_tree->setCurrentItem(first_new_item);
             }
         }
-
         queue_tree->setUpdatesEnabled(true);
-
         update_qs();
         refresh_properties();
         adjust_qc();
@@ -1362,7 +1858,9 @@ namespace pk::ui::outs
         queue_tree = new QTreeWidget(this);
         queue_tree->setHeaderLabels(QStringList{"Archive", "Header check", "AEAD integrity"});
         queue_tree->setRootIsDecorated(false); // qt?
-        queue_tree->setSelectionMode(QAbstractItemView::SingleSelection);
+        queue_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        queue_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(queue_tree, &QTreeWidget::customContextMenuRequested, this, &cd_am_i_evil::on_tree_cm);
         queue_tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         queue_tree->setTextElideMode(Qt::ElideNone);
         queue_tree->header()->setStretchLastSection(false);
@@ -1479,10 +1977,10 @@ namespace pk::ui::outs
         columns_layout->addLayout(right_layout, 11);
         main_layout->addLayout(columns_layout, 1);
         QHBoxLayout *action_layout = new QHBoxLayout();
-        QPushButton *btn_export = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Export Log (.log)", this);
+        QPushButton *btn_export = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Export log (.log)", this);
         action_layout->addWidget(btn_export);
         action_layout->addStretch();
-        QPushButton *btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Verify AEAD Integrity", this);
+        QPushButton *btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Verify", this);
         btn_verify->setDefault(true);
         QPushButton *btn_close = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Close", this);
         action_layout->addWidget(btn_verify);
@@ -1512,11 +2010,35 @@ namespace pk::ui::outs
     }
     void cd_am_i_evil::on_remove_files()
     {
-        int row = queue_tree->indexOfTopLevelItem(queue_tree->currentItem());
-        if (row >= 0 && row < static_cast<int>(m_reports.size()))
+        QList<QTreeWidgetItem *> selected = queue_tree->selectedItems();
+        if (selected.isEmpty() && queue_tree->currentItem())
+            selected.append(queue_tree->currentItem());
+
+        if (selected.isEmpty())
+            return;
+
+        QList<int> rows;
+        for (QTreeWidgetItem *item : selected)
         {
-            m_reports.erase(m_reports.begin() + row);
-            delete queue_tree->takeTopLevelItem(row);
+            int r = queue_tree->indexOfTopLevelItem(item);
+            if (r >= 0 && !rows.contains(r))
+                rows.append(r);
+        }
+        std::sort(rows.begin(), rows.end(), std::greater<int>());
+
+        for (int r : rows)
+        {
+            if (r >= 0 && r < static_cast<int>(m_reports.size()))
+            {
+                QString p = QString::fromStdString(m_reports[r].header.___filepath.string());
+                if (__custom_entropy_.contains(p))
+                {
+                    __custom_entropy_[p].wipe();
+                    __custom_entropy_.remove(p);
+                }
+                m_reports.erase(m_reports.begin() + r);
+                delete queue_tree->takeTopLevelItem(r);
+            }
         }
         update_qs();
         refresh_properties();
@@ -1524,11 +2046,161 @@ namespace pk::ui::outs
     }
     void cd_am_i_evil::on_clear_all()
     {
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
         m_reports.clear();
         queue_tree->clear();
         txt_current_path->clear();
         pt->clear();
         update_qs();
+        adjust_qc();
+    }
+    void cd_am_i_evil::on_tree_cm(const QPoint &pos)
+    {
+        QList<QTreeWidgetItem *> selected = queue_tree->selectedItems();
+        if (selected.isEmpty())
+            return;
+
+        QMenu menu(this);
+        bool any_has_entropy = false;
+        bool any_has_pwd = false;
+        bool any_has_kf = false;
+
+        for (QTreeWidgetItem *item : selected)
+        {
+            QString p = item->toolTip(0);
+            if (__custom_entropy_.contains(p))
+            {
+                const auto &ce = __custom_entropy_[p];
+                if (ce.has_any())
+                    any_has_entropy = true;
+                if (ce.has_password)
+                    any_has_pwd = true;
+                if (ce.has_keyfile)
+                    any_has_kf = true;
+            }
+        }
+
+        QString action_text = any_has_entropy ? "View / edit custom entropy..." : "Source custom password / keyfile...";
+        QAction *act_source = menu.addAction(
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/key.svg")),
+            action_text);
+        connect(act_source, &QAction::triggered, this, &cd_am_i_evil::on_src_ce);
+
+        if (any_has_pwd)
+        {
+            QAction *act_rm_pwd = menu.addAction("Remove custom password");
+            connect(act_rm_pwd, &QAction::triggered, this, &cd_am_i_evil::on_rm_cp);
+        }
+        if (any_has_kf)
+        {
+            QAction *act_rm_kf = menu.addAction("Remove custom keyfile");
+            connect(act_rm_kf, &QAction::triggered, this, &cd_am_i_evil::on_rm_ck);
+        }
+        if (any_has_entropy)
+        {
+            QAction *act_rm_all = menu.addAction("Remove all custom entropy");
+            connect(act_rm_all, &QAction::triggered, this, &cd_am_i_evil::on_rm_all);
+        }
+        menu.addSeparator();
+        QAction *act_remove = menu.addAction(
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")),
+            "Remove from list");
+        connect(act_remove, &QAction::triggered, this, &cd_am_i_evil::on_remove_files);
+        menu.exec(queue_tree->viewport()->mapToGlobal(pos));
+    }
+    void cd_am_i_evil::on_src_ce()
+    {
+        QList<QTreeWidgetItem *> selected = queue_tree->selectedItems();
+        if (selected.isEmpty())
+            return;
+        QList<QPair<QString, custom_entropy>> targets;
+        for (QTreeWidgetItem *item : selected)
+        {
+            QString p = item->toolTip(0);
+            custom_entropy ce;
+            if (__custom_entropy_.contains(p))
+                ce = __custom_entropy_[p];
+            targets.append(qMakePair(p, ce));
+        }
+        cd_gib_entropy dlg(targets, this);
+        if (dlg.exec() == QDialog::Accepted)
+        {
+            QList<custom_entropy> results = dlg.get_results();
+            for (int i = 0; i < targets.size() && i < results.size(); ++i)
+            {
+                QString p = targets[i].first;
+                if (__custom_entropy_.contains(p))
+                    __custom_entropy_[p].wipe();
+
+                if (results[i].has_any())
+                    __custom_entropy_[p] = results[i];
+                else
+                    __custom_entropy_.remove(p);
+            }
+            for (QTreeWidgetItem *item : selected)
+            {
+                QString p = item->toolTip(0);
+                refresh_item_display(item, p);
+            }
+            refresh_properties();
+            adjust_qc();
+        }
+    }
+    void cd_am_i_evil::on_rm_cp()
+    {
+        for (QTreeWidgetItem *item : queue_tree->selectedItems())
+        {
+            QString p = item->toolTip(0);
+            if (__custom_entropy_.contains(p))
+            {
+                auto &ce = __custom_entropy_[p];
+                if (!ce.password.isEmpty())
+                {
+                    pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(ce.password.data())), ce.password.size() * sizeof(QChar));
+                    ce.password.clear();
+                }
+                ce.has_password = false;
+                if (!ce.has_any())
+                    __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
+        refresh_properties();
+        adjust_qc();
+    }
+    void cd_am_i_evil::on_rm_ck()
+    {
+        for (QTreeWidgetItem *item : queue_tree->selectedItems())
+        {
+            QString p = item->toolTip(0);
+            if (__custom_entropy_.contains(p))
+            {
+                auto &ce = __custom_entropy_[p];
+                ce.keyfile_path.clear();
+                ce.has_keyfile = false;
+                if (!ce.has_any())
+                    __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
+        refresh_properties();
+        adjust_qc();
+    }
+    void cd_am_i_evil::on_rm_all()
+    {
+        for (QTreeWidgetItem *item : queue_tree->selectedItems())
+        {
+            QString p = item->toolTip(0);
+            if (__custom_entropy_.contains(p))
+            {
+                __custom_entropy_[p].wipe();
+                __custom_entropy_.remove(p);
+                refresh_item_display(item, p);
+            }
+        }
+        refresh_properties();
         adjust_qc();
     }
     void cd_am_i_evil::on_selection_changed()
@@ -1616,6 +2288,17 @@ namespace pk::ui::outs
         add_prop(cat_crypto, "Argon2id memory cost", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024)) : "-");
         add_prop(cat_crypto, "Argon2id time cost", rep.header.valid_magic ? QString("%1 pass(es)").arg(rep.header.time_cost) : "-");
         add_prop(cat_crypto, "Argon2id parallelism", rep.header.valid_magic ? QString("%1 thread(s)").arg(rep.header.parallelism) : "-");
+        QString p = QString::fromStdString(rep.header.___filepath.string());
+        if (__custom_entropy_.contains(p) && __custom_entropy_[p].has_any())
+        {
+            const auto &ce = __custom_entropy_[p];
+            QString src_str = QString("Custom (%1)").arg(ce.badge_tag());
+            add_prop(cat_crypto, "Entropy source", src_str, QColor(0x55, 0xff, 0x55), "Using archive-specific custom entropy");
+        }
+        else
+        {
+            add_prop(cat_crypto, "Entropy source", "Default (global input)", QColor(0xa0, 0xa0, 0xa0), "Using global password and keyfile inputs");
+        }
         QTreeWidgetItem *cat_cmp = add_category("Compression n' metadata");
         QString cmp_str = "-";
         if (rep.header.valid_magic)
@@ -1736,13 +2419,27 @@ namespace pk::ui::outs
     {
         if (m_reports.empty())
         {
-            warning(this, "No archives", "Add at least one archive to verify.");
+            warning(this, "ERROR", "Add at least one archive to verify.");
             return;
         }
-        if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
+        bool global_has_entropy = !password_v->text().isEmpty() || !keyfile_path_v->text().isEmpty();
+        if (!global_has_entropy)
         {
-            warning(this, "Password required", "A password or keyfile is required to verify AEAD cryptographic integrity; container headers are already inspected without a password.");
-            return;
+            bool all_have_custom = true;
+            for (const auto &rep : m_reports)
+            {
+                QString p = QString::fromStdString(rep.header.___filepath.string());
+                if (!__custom_entropy_.contains(p) || !__custom_entropy_[p].has_any())
+                {
+                    all_have_custom = false;
+                    break;
+                }
+            }
+            if (!all_have_custom)
+            {
+                warning(this, "ERROR", "A password or keyfile is required to verify AEAD cryptographic integrity (either globally or custom per-archive); container headers are already inspected without a password.");
+                return;
+            }
         }
         QStringList passed_reports;
         QStringList failed_reports;
@@ -1751,12 +2448,35 @@ namespace pk::ui::outs
         {
             if (user_cancelled)
                 break;
-
             auto &rep = m_reports[i];
             QString archive_path = QString::fromStdString(rep.header.___filepath.string());
             QString base_name = QFileInfo(archive_path).fileName();
+            QString eff_pwd = password_v->text();
+            QString eff_kf = keyfile_path_v->text();
+            if (__custom_entropy_.contains(archive_path))
+            {
+                const auto &ce = __custom_entropy_[archive_path];
+                if (ce.has_password)
+                    eff_pwd = ce.password;
+                if (ce.has_keyfile)
+                    eff_kf = ce.keyfile_path;
+            }
+            if (eff_pwd.isEmpty() && eff_kf.isEmpty())
+            {
+                rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
+                rep.error_details = "No password or keyfile provided for this archive.";
+                QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
+                if (tree_item)
+                {
+                    tree_item->setText(2, "INVALID");
+                    tree_item->setToolTip(2, "No entropy source provided");
+                    tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
+                }
+                failed_reports.append(QString(">> %1:\n   - Error: No entropy source provided").arg(base_name));
+                continue;
+            }
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::am_i_evil);
-            w->ss_def_verify_params(archive_path, password_v->text(), keyfile_path_v->text());
+            w->ss_def_verify_params(archive_path, eff_pwd, eff_kf);
             cd_prog_dialog pd(w, this);
             QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
             int res = pd.exec();
@@ -1824,11 +2544,9 @@ namespace pk::ui::outs
                 }
             }
         }
-
         update_qs();
         refresh_properties();
         adjust_qc();
-
         QString summary;
         if (!passed_reports.isEmpty())
         {
@@ -1844,44 +2562,51 @@ namespace pk::ui::outs
         }
         if (failed_reports.isEmpty())
         {
-            info(this, "Verification OK", summary);
+            info(this, "OK", summary);
         }
         else if (passed_reports.isEmpty())
         {
-            error(this, "Verification failed", summary);
+            error(this, "ERROR", summary);
         }
         else
         {
-            warning(this, "Partial verification results", summary);
+            warning(this, "ERROR...?", summary);
         }
     }
     void cd_am_i_evil::on_export_log()
     {
         if (m_reports.empty())
         {
-            warning(this, "No data", "No archive inspection data to export.");
+            warning(this, "ERROR", "No archive inspection data to export.");
             return;
         }
-        QString save_path = QFileDialog::getSaveFileName(
-            this, "Export verification log", "mage_verification_report.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
+        QString save_path = QFileDialog::getSaveFileName(this, "Export verification log", "mage_verification_report.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
         if (save_path.isEmpty())
             return;
         std::string log_content = pk::crypto::am_i_evil::mk_export_log(m_reports);
         QFile file(save_path);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         {
-            error(this, "Export failed", QString("Could not open file for writing:\n%1").arg(save_path));
+            error(this, "ERROR", QString("Could not open file for writing:\n%1").arg(save_path));
             return;
         }
         QTextStream out(&file);
         out << QString::fromStdString(log_content);
         file.close();
-        info(this, "Export succeeded", QString("Verification log successfully saved to:\n%1").arg(save_path));
+        info(this, "OK", QString("Verification log successfully saved to:\n%1").arg(save_path));
     }
     void cd_am_i_evil::on_close()
     {
-        password_v->clear();
+        if (!password_v->text().isEmpty())
+        {
+            QString s = password_v->text();
+            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
+            password_v->clear();
+        }
         keyfile_path_v->clear();
+        for (auto &ce : __custom_entropy_)
+            ce.wipe();
+        __custom_entropy_.clear();
         accept();
     }
     void cd_am_i_evil::adjust_qc()
@@ -2196,11 +2921,11 @@ namespace pk::ui::outs
         connect(btn_install_cm, &QPushButton::clicked, this, [this]()
                 {
             pk::os::cm::install();
-            pk::ui::outs::info(this, "Success", "Context menus installed successfully."); });
+            pk::ui::outs::info(this, "OK", "Context menus installed successfully."); });
         connect(btn_remove_cm, &QPushButton::clicked, this, [this]()
                 {
             pk::os::cm::remove();
-            pk::ui::outs::info(this, "Success", "Context menus removed successfully."); });
+            pk::ui::outs::info(this, "OK", "Context menus removed successfully."); });
 #else
         QLabel *lbl_unsupported = new QLabel("<b>[ OS NOT SUPPORTED! ]</b><br><br>Context menu integration is currently only supported on Windows.", this);
         lbl_unsupported->setStyleSheet("color: #aaaaaa; font-size: 12px;");
@@ -2260,7 +2985,7 @@ namespace pk::ui::outs
         s.ss_def_ext_open(ext_open->isChecked());
         s.ss_def_ext_overwrite(ext_overwrite->currentIndex());
         s.save();
-        info(this, "Success", "Settings successfully saved.");
+        info(this, "OK", "Settings successfully saved.");
     }
     void cd_settings::on_cancel()
     {
