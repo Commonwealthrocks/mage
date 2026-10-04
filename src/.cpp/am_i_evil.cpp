@@ -375,9 +375,19 @@ namespace pk::crypto::am_i_evil
             in.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
             std::size_t bytes_read = in.gcount();
             if (bytes_read == 0)
-                throw std::runtime_error("unexpected EOF.");
+            {
+                rep.failed_chunk_index = chunk_index;
+                rep.verdict = __vv_::stream_corrupted;
+                rep.error_details = "unexpected EOF encountered while reading chunk #" + std::to_string(chunk_index) + ".";
+                throw std::runtime_error(rep.error_details);
+            }
             if (bytes_read <= cipher->what_mac_size())
-                throw std::runtime_error("corrupted chunk -> too small.");
+            {
+                rep.failed_chunk_index = chunk_index;
+                rep.verdict = __vv_::tampered_chunk;
+                rep.error_details = "corrupted or truncated chunk #" + std::to_string(chunk_index) + " (" + std::to_string(bytes_read) + " bytes); chunk too small for AEAD tag.";
+                throw std::runtime_error(rep.error_details);
+            }
             std::memcpy(current_nonce, header.base_nonce, nonce_size);
             for (std::size_t i = 0; i < 8 && i < nonce_size; ++i)
             {
@@ -567,7 +577,15 @@ namespace pk::crypto::am_i_evil
         {
             if (rep.verdict == __vv_::io_error)
             {
-                rep.error_details = e.what();
+                std::string what_str = e.what();
+                if (what_str.find("cancelled") != std::string::npos)
+                {
+                    rep.error_details = "verification cancelled by user.";
+                }
+                else
+                {
+                    rep.error_details = e.what();
+                }
             }
         }
 
