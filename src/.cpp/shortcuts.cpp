@@ -1,5 +1,5 @@
 // shortcuts.cpp
-// last updated: 03/08/2026
+// last updated: 04/10/2026
 #include "../.hpp/shortcuts.hpp"
 #include <QDir>
 #include <QCoreApplication>
@@ -58,7 +58,7 @@ namespace pk::ui::shortcuts
                         }
                     }
                 }
-                
+
                 if (keyEvent->key() == Qt::Key_I)
                 {
                     pk::ui::outs::toggle_internal_console();
@@ -126,7 +126,8 @@ namespace pk::ui::shortcuts
         add_row(2, "CTRL + SHIFT + D", "-> decrypt archive");
         add_row(3, "CTRL + SHIFT + S", "-> settings");
         add_row(4, "CTRL + SHIFT + I", "-> internal console");
-        add_row(5, "CTRL + Q", "-> quit app");
+        add_row(5, "CTRL + SHIFT + V", "-> verify archive");
+        add_row(6, "CTRL + Q", "-> quit app");
         layout->addWidget(table);
         QPushButton *btn_close = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), "Close", &dialog);
         QObject::connect(btn_close, &QPushButton::clicked, &dialog, &QDialog::accept);
