@@ -3047,29 +3047,77 @@ namespace pk::ui::outs
         cd_int_c->setAttribute(Qt::WA_QuitOnClose, false);
         cd_int_c->setWindowTitle("MAGE - internal debug console");
         cd_int_c->resize(800, 600);
+        cd_int_c->setMinimumSize(600, 380);
         pk::ui::outs::dont_burn_my_eyes(cd_int_c);
         QVBoxLayout *layout = new QVBoxLayout(cd_int_c);
+        layout->setContentsMargins(10, 10, 10, 10);
+        layout->setSpacing(8);
         QTextEdit *text_edit = new QTextEdit(cd_int_c);
         text_edit->setReadOnly(true);
-        text_edit->setStyleSheet("QTextEdit { background-color: #1e1e1e; color: #fafafa; font-family: Consolas, monospace; font-size: 11pt; border: none; }");
-        layout->addWidget(text_edit);
+        text_edit->setStyleSheet(
+            "QTextEdit {"
+            "    background-color: #202020;"
+            "    color: #d4d4d4;"
+            "    font-family: 'Consolas', 'Courier New', 'Fira Code', monospace;"
+            "    font-size: 11pt;"
+            "    border: 1px solid #333333;"
+            "    border-radius: 4px;"
+            "    padding: 6px;"
+            "    selection-background-color: #007acc;"
+            "    selection-color: #ffffff;"
+            "}");
+        layout->addWidget(text_edit, 1);
+        auto format_log_line = [](const QString &raw) -> QString
+        {
+            QString escaped = raw.toHtmlEscaped();
+            static const QRegularExpression re(R"(^(\[\d{2}:\d{2}:\d{2}(?:\.\d{3})?\])\s*(.*)$)");
+            auto match = re.match(escaped);
+            QString timestamp_html;
+            QString body;
+            if (match.hasMatch())
+            {
+                timestamp_html = QString("<span style=\"color: #61afef; font-weight: 600;\">%1</span> ").arg(match.captured(1));
+                body = match.captured(2);
+            }
+            else
+            {
+                body = escaped;
+            }
+            QString lower = body.toLower();
+            QString body_color = "#d4d4d4";
+            if (lower.contains("error") || lower.contains("failed") || lower.contains("fail") || lower.contains("invalid") || lower.contains("corrupt"))
+            {
+                body_color = "#f44747";
+            }
+            else if (lower.contains("warn") || lower.contains("warning") || lower.contains("caution") || lower.contains("notice"))
+            {
+                body_color = "#e5c07b";
+            }
+            else if (lower.contains("success") || lower.contains("successfully") || lower.contains("verified") || lower.contains("authentic") || lower.contains(" ok") || lower.startsWith("ok"))
+            {
+                body_color = "#98c379";
+            }
+            return QString("<div style=\"margin: 1px 0; line-height: 135%;\">%1<span style=\"color: %2;\">%3</span></div>").arg(timestamp_html, body_color, body);
+        };
         for (const auto &msg : pk::core::logger::instance().get_history())
         {
-            text_edit->append(QString::fromStdString(msg));
+            text_edit->append(format_log_line(QString::fromStdString(msg)));
         }
         text_edit->moveCursor(QTextCursor::End);
-        QPushButton *btn_export = new QPushButton("Export log", cd_int_c);
-        layout->addWidget(btn_export, 0, Qt::AlignRight);
-        pk::core::logger::instance().set_callback([text_edit](const std::string &msg)
-                                                  {
-            QString qmsg = QString::fromStdString(msg);
-            QMetaObject::invokeMethod(text_edit, [text_edit, qmsg](){
-                text_edit->append(qmsg);
-                text_edit->moveCursor(QTextCursor::End);
-            }, Qt::QueuedConnection); });
+        QHBoxLayout *action_layout = new QHBoxLayout();
+        QLabel *lbl_info = new QLabel("                         Internal runtime log n' diagnostics", cd_int_c);
+        lbl_info->setStyleSheet("color: #777777; font-size: 11px; font-style: italic;");
+        action_layout->addWidget(lbl_info);
+        action_layout->addStretch();
+        QPushButton *btn_clear = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm_all.svg")), " Clear console", cd_int_c);
+        QPushButton *btn_export = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Export log...", cd_int_c);
+        action_layout->addWidget(btn_clear);
+        action_layout->addWidget(btn_export);
+        layout->addLayout(action_layout);
+        QObject::connect(btn_clear, &QPushButton::clicked, text_edit, &QTextEdit::clear);
         QObject::connect(btn_export, &QPushButton::clicked, cd_int_c, [text_edit]()
                          {
-            QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "", "Log files (*.log) ;; Text files (*.txt) ;; All files (*)");
+            QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "mage_internal.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
             if (!path.isEmpty())
             {
                 QFile f(path);
@@ -3077,8 +3125,17 @@ namespace pk::ui::outs
                 {
                     f.write(text_edit->toPlainText().toUtf8());
                     f.close();
+                    pk::ui::outs::info(cd_int_c, "OK", QString("Log successfully exported to:\n%1").arg(path));
                 }
             } });
+        pk::core::logger::instance().set_callback([text_edit, format_log_line](const std::string &msg)
+                                                  {
+            QString qmsg = QString::fromStdString(msg);
+            QMetaObject::invokeMethod(text_edit, [text_edit, qmsg, format_log_line]() {
+                text_edit->append(format_log_line(qmsg));
+                text_edit->moveCursor(QTextCursor::End);
+            }, Qt::QueuedConnection); });
+
         cd_int_c->show();
     }
 }
