@@ -2030,7 +2030,7 @@ namespace pk::ui::outs
         QPushButton *btn_export = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/save.svg")), " Export log (.log)", this);
         action_layout->addWidget(btn_export);
         action_layout->addStretch();
-        QPushButton *btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Verify", this);
+        QPushButton *btn_verify = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/verify.svg")), " Verify", this);
         btn_verify->setDefault(true);
         QPushButton *btn_close = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " Close", this);
         action_layout->addWidget(btn_verify);
