@@ -27,6 +27,7 @@ namespace pk::ui
     gui::gui(pk::ipc::ipc_server *ipc, QWidget *parent)
         : QMainWindow(parent)
     {
+        setObjectName("gui");
         setWindowTitle("MAGE - Make actually good encryption!"); // this title is cutoff; oh well
         setFixedSize(300, 330);
         setup_ui();
