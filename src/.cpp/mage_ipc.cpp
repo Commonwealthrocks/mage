@@ -1,5 +1,5 @@
 // mage_ipc.cpp
-// last updated: 09/09/2026
+// last updated: 04/10/2026
 #include "../.hpp/mage_ipc.hpp"
 #include <QDataStream>
 #include <QCryptographicHash>
@@ -81,6 +81,10 @@ namespace pk::ipc
         else if (mode == "decrypt")
         {
             emit rq_dec(path);
+        }
+        else if (mode == "verify")
+        {
+            emit rq_ver(path);
         }
     }
 }
