@@ -327,7 +327,7 @@ namespace pk::ui::worker
                     }
                 }
                 emit current_ac0("Scanning " + QString::number(entries.size()) + " files...");
-                pk::crypto::format::pack_archive(entries, output_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb);
+                pk::crypto::format::pack_archive(entries, output_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb, [this]() -> bool { return isInterruptionRequested(); });
                 pk::core::logger::log("worker successfully packed archive.");
             }
             else if (__mode == mode::unpack)
@@ -391,7 +391,7 @@ namespace pk::ui::worker
                                 pk::ui::sfx::play_info();
                                 proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
                             Qt::BlockingQueuedConnection);
-                        return proceed; }, status_cb);
+                        return proceed; }, status_cb, [this]() -> bool { return isInterruptionRequested(); });
                 pk::core::logger::log("worker successfully unpacked archive.");
             }
             else if (__mode == mode::am_i_evil)
