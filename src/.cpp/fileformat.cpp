@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 02/10/2026
+// last updated: 05/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -293,6 +293,10 @@ namespace pk::crypto::format
         std::function<void(const std::string &)> status_cb,
         std::function<bool()> cancel_cb)
     {
+        std::error_code ec_out;
+        std::filesystem::create_directories(out_dir, ec_out);
+        if (ec_out)
+            throw std::runtime_error("failed to create destination directory: " + ec_out.message());
         uint64_t total_bytes = std::filesystem::file_size(in_path);
         uint64_t processed_bytes = 0;
         std::ifstream in(in_path, std::ios::binary);
