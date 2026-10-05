@@ -1,5 +1,5 @@
 // path_handler.cpp
-// last updated: 02/10/2026
+// last updated: 05/10/2026
 #include "../.hpp/path_handler.hpp"
 #include <algorithm>
 #include <array>
@@ -358,12 +358,22 @@ namespace pk::path
     bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p, std::error_code &ec) noexcept
     {
         ec.clear();
-        if (std::filesystem::is_symlink(p, ec) || ec)
+        std::error_code status_ec;
+        auto st = std::filesystem::symlink_status(p, status_ec);
+        if (status_ec || st.type() == std::filesystem::file_type::not_found)
+        {
+            return false;
+        }
+        if (st.type() == std::filesystem::file_type::symlink)
+        {
             return true;
+        }
 #ifdef _WIN32
         DWORD attrs = GetFileAttributesW(p.wstring().c_str());
         if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT))
+        {
             return true;
+        }
 #endif
         return false;
     }
