@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 05/10/2026
+// last updated: 27/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -311,7 +311,7 @@ namespace pk::crypto::format
             throw std::runtime_error("unsupported archive version");
         if (header.algo > static_cast<uint8_t>(cipher::algorithm::aes_256_siv))
             throw std::runtime_error("corrupted or malicious archive -> unknown cipher algorithm");
-        if (header.compression_algo > 2)
+        if (header.compression_algo > 1)
             throw std::runtime_error("corrupted or malicious archive -> unknown compression algorithm");
         bool has_meta = (header.has_metadata == 1);
         pk::crypto::kdf::kdf_cfg kdf_cfg{};
