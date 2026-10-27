@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 04/10/2026
+// last updated: 27/10/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -77,9 +77,10 @@ namespace pk::ui::outs
         QTabWidget *m_tabs = nullptr;
         QList<custom_entropy> m_results;
     };
-    void info(QWidget *parent, const QString &title, const QString &message);
-    void warning(QWidget *parent, const QString &title, const QString &message);
-    void error(QWidget *parent, const QString &title, const QString &message);
+    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString());
+    void warning(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString());
+    void error(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString(), const QString &details = QString());
+    void show_error(QWidget *parent, const QString &raw_or_formatted_error);
     bool ask(QWidget *parent, const QString &title, const QString &message);
     void dont_burn_my_eyes(QWidget *window);
     bool r_u_a_valid_filename(const QString &name, QString *err_msg = nullptr);
