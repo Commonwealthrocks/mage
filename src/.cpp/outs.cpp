@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 27/10/2026
+// last updated: 28/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -17,6 +17,7 @@
 #include <QWheelEvent>
 #include "../.hpp/keyfile.hpp"
 #include <QStackedWidget>
+#include <QScrollArea>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
@@ -187,32 +188,120 @@ namespace pk::ui::outs
         }
 #endif
     }
+    enum class msg_type
+    {
+        info,
+        warning,
+        error,
+        ask
+    };
+
     class custom_msg_dialog : public QDialog
     {
     public:
-        custom_msg_dialog(const QString &title, const QString &message, bool is_ask = false, QWidget *parent = nullptr)
+        custom_msg_dialog(
+            const QString &title,
+            const QString &message,
+            msg_type type = msg_type::info,
+            QWidget *parent = nullptr,
+            const QString &suggestion = QString(),
+            const QString &details = QString())
             : QDialog(parent)
         {
             setWindowTitle(title);
-            setFixedSize(400, 200);
-            setWindowFlags(windowFlags() | Qt::Window);
-            setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+            setWindowFlags((windowFlags() & ~Qt::WindowContextHelpButtonHint & ~Qt::WindowMaximizeButtonHint) | Qt::MSWindowsFixedSizeDialogHint);
             dont_burn_my_eyes(this);
-            QVBoxLayout *layout = new QVBoxLayout(this);
+            QVBoxLayout *main_layout = new QVBoxLayout(this);
+            main_layout->setSpacing(12);
+            main_layout->setContentsMargins(18, 18, 18, 14);
+            QHBoxLayout *header_layout = new QHBoxLayout();
+            header_layout->setSpacing(12);
+            QLabel *lbl_icon = new QLabel(this);
+            QString icon_name = "warn.svg";
+            if (type == msg_type::info)
+                icon_name = "ok.svg";
+            else if (type == msg_type::ask)
+                icon_name = "about.svg";
+            QIcon icon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/" + icon_name));
+            lbl_icon->setPixmap(icon.pixmap(36, 36));
+            lbl_icon->setFixedSize(36, 36);
+            lbl_icon->setAlignment(Qt::AlignCenter);
+            header_layout->addWidget(lbl_icon, 0, Qt::AlignTop);
             QLabel *lbl_title = new QLabel(title, this);
-            lbl_title->setStyleSheet("font-weight: bold; font-size: 12pt;");
-            layout->addWidget(lbl_title);
-            QTextEdit *text_edit = new QTextEdit(this);
-            text_edit->setPlainText(message);
-            text_edit->setReadOnly(true);
-            text_edit->setStyleSheet("QTextEdit { background-color: #3C3C3C; color: #E0E0E0; border: 1px solid #5A5A5A; }");
-            layout->addWidget(text_edit);
+            lbl_title->setStyleSheet("font-weight: bold; font-size: 13pt; color: #ffffff;");
+            lbl_title->setWordWrap(true);
+            header_layout->addWidget(lbl_title, 1, Qt::AlignVCenter);
+            main_layout->addLayout(header_layout);
+
+            QTextEdit *txt_message = new QTextEdit(this);
+            txt_message->setPlainText(message);
+            txt_message->setReadOnly(true);
+            txt_message->setTextInteractionFlags(Qt::NoTextInteraction);
+            txt_message->setFocusPolicy(Qt::NoFocus);
+            txt_message->viewport()->setCursor(Qt::ArrowCursor);
+            txt_message->setFrameShape(QFrame::NoFrame);
+            txt_message->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            txt_message->setStyleSheet(
+                "QTextEdit { background-color: transparent; color: #e0e0e0; "
+                "font-size: 10pt; border: none; padding: 2px 2px; }"
+                "QScrollBar:vertical { background: #1e1e1e; width: 8px; border-radius: 4px; }"
+                "QScrollBar::handle:vertical { background: #444444; border-radius: 4px; min-height: 20px; }"
+                "QScrollBar::handle:vertical:hover { background: #666666; }"
+                "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }");
+
+            const int dlg_w = 640;
+            const int inner_w = dlg_w - 36;
+            txt_message->document()->setTextWidth(inner_w);
+            int doc_h = static_cast<int>(std::ceil(txt_message->document()->size().height())) + 6;
+            txt_message->document()->setTextWidth(-1);
+            int target_h = std::clamp(doc_h, 45, 360);
+            txt_message->setFixedHeight(target_h);
+            main_layout->addWidget(txt_message);
+            if (!suggestion.trimmed().isEmpty())
+            {
+                QFrame *sug_card = new QFrame(this);
+                sug_card->setObjectName("sug_card");
+                sug_card->setStyleSheet("#sug_card { background-color: #272727; border-left: 3px solid #007acc; border-radius: 2px; padding: 6px 10px; }");
+                QVBoxLayout *sug_layout = new QVBoxLayout(sug_card);
+                sug_layout->setContentsMargins(6, 4, 6, 4);
+                sug_layout->setSpacing(2);
+                QLabel *sug_label = new QLabel(suggestion, sug_card);
+                sug_label->setWordWrap(true);
+                sug_label->setTextInteractionFlags(Qt::NoTextInteraction);
+                sug_label->setFocusPolicy(Qt::NoFocus);
+                sug_label->setStyleSheet("border: none; background: transparent; color: #b0c4de; font-size: 9.5pt;");
+                sug_layout->addWidget(sug_label);
+                main_layout->addWidget(sug_card);
+            }
+            if (!details.trimmed().isEmpty() && details.trimmed() != message.trimmed())
+            {
+                QPushButton *btn_details = new QPushButton("Show details", this);
+                btn_details->setStyleSheet("QPushButton { background-color: transparent; border: none; color: #888888; font-size: 9pt; text-align: left; padding: 2px 0; } QPushButton:hover { color: #007acc; text-decoration: underline; }");
+                QTextEdit *text_details = new QTextEdit(this);
+                text_details->setPlainText(details);
+                text_details->setReadOnly(true);
+                text_details->setTextInteractionFlags(Qt::NoTextInteraction);
+                text_details->setFocusPolicy(Qt::NoFocus);
+                text_details->setMaximumHeight(130);
+                text_details->setStyleSheet("QTextEdit { background-color: #1a1a1a; color: #aaaaaa; font-family: 'Consolas', 'Courier New', monospace; font-size: 8.5pt; border: 1px solid #444444; border-radius: 2px; padding: 4px; }");
+                text_details->setVisible(false);
+                connect(btn_details, &QPushButton::clicked, this, [btn_details, text_details, this, dlg_w]()
+                        {
+                    bool visible = !text_details->isVisible();
+                    text_details->setVisible(visible);
+                    btn_details->setText(visible ? "Hide details" : "Show details");
+                    this->adjustSize();
+                    this->setFixedSize(dlg_w, this->sizeHint().height()); });
+
+                main_layout->addWidget(btn_details);
+                main_layout->addWidget(text_details);
+            }
             QHBoxLayout *btn_layout = new QHBoxLayout();
             btn_layout->addStretch();
-            if (is_ask)
+            if (type == msg_type::ask)
             {
-                QPushButton *btn_yes = new QPushButton("Yes", this);
-                QPushButton *btn_no = new QPushButton("No", this);
+                QPushButton *btn_yes = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Yes", this);
+                QPushButton *btn_no = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " No", this);
                 connect(btn_yes, &QPushButton::clicked, this, &QDialog::accept);
                 connect(btn_no, &QPushButton::clicked, this, &QDialog::reject);
                 btn_layout->addWidget(btn_yes);
@@ -221,33 +310,45 @@ namespace pk::ui::outs
             else
             {
                 QPushButton *btn_ok = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " OK", this);
+                btn_ok->setDefault(true);
                 connect(btn_ok, &QPushButton::clicked, this, &QDialog::accept);
                 btn_layout->addWidget(btn_ok);
             }
-            layout->addLayout(btn_layout);
+            main_layout->addLayout(btn_layout);
+            adjustSize();
+            setFixedSize(dlg_w, sizeHint().height());
         }
     };
-    void info(QWidget *parent, const QString &title, const QString &message)
+    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion)
     {
         pk::ui::sfx::play_info();
-        custom_msg_dialog dlg(title, message, false, parent);
+        custom_msg_dialog dlg(title, message, msg_type::info, parent, suggestion);
         dlg.exec();
     }
-    void warning(QWidget *parent, const QString &title, const QString &message)
+    void warning(QWidget *parent, const QString &title, const QString &message, const QString &suggestion)
     {
         pk::ui::sfx::play_error();
-        custom_msg_dialog dlg(title, message, false, parent);
+        custom_msg_dialog dlg(title, message, msg_type::warning, parent, suggestion);
         dlg.exec();
     }
-    void error(QWidget *parent, const QString &title, const QString &message)
+    void error(QWidget *parent, const QString &title, const QString &message, const QString &suggestion, const QString &details)
     {
         pk::ui::sfx::play_error();
-        custom_msg_dialog dlg(title, message, false, parent);
+        custom_msg_dialog dlg(title, message, msg_type::error, parent, suggestion, details);
         dlg.exec();
+    }
+    void show_error(QWidget *parent, const QString &raw_or_formatted_error)
+    {
+        auto desc = pk::error::parse(raw_or_formatted_error.toStdString());
+        error(parent,
+              QString::fromStdString(desc.title),
+              QString::fromStdString(desc.message),
+              QString::fromStdString(desc.suggestion),
+              QString::fromStdString(desc.technical));
     }
     bool ask(QWidget *parent, const QString &title, const QString &message)
     {
-        custom_msg_dialog dlg(title, message, true, parent);
+        custom_msg_dialog dlg(title, message, msg_type::ask, parent);
         return dlg.exec() == QDialog::Accepted;
     }
     cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
@@ -510,19 +611,19 @@ namespace pk::ui::outs
     {
         if (path_input->text().isEmpty())
         {
-            warning(this, "ERROR", "Path cannot be empty.");
+            warning(this, "Missing path", "Destination path for the keyfile cannot be empty.", "Browse to or enter a destination file path.");
             return;
         }
         try
         {
             pk::crypto::keyfile::generate(path_input->text().toStdString());
             gen_path_ = path_input->text();
-            info(this, "OK", "Keyfile successfully generated.");
+            info(this, "Keyfile generated", "Keyfile successfully generated.");
             accept();
         }
         catch (const std::exception &e)
         {
-            error(this, "ERROR", QString("Failed to generate keyfile: ") + e.what());
+            error(this, "Keyfile generation failed", QString("Failed to generate keyfile: ") + e.what(), "Check that the directory exists and you have write permissions.");
         }
     }
     void cd_keyfile::on_cancel()
@@ -858,7 +959,7 @@ namespace pk::ui::outs
     {
         if (output_dir->text().isEmpty() || output_name->text().isEmpty())
         {
-            warning(this, "ERROR", "Archive output directory or name is empty.");
+            warning(this, "Missing output path", "Archive output directory or name is empty.", "Specify both a destination folder and an archive name.");
             return;
         }
         QString resolved_out = output_dir->text();
@@ -872,27 +973,27 @@ namespace pk::ui::outs
         QString err_msg;
         if (!pk::ui::outs::valid_path_probable(resolved_out, &err_msg))
         {
-            warning(this, "ERROR", err_msg);
+            warning(this, "Invalid destination path", err_msg);
             return;
         }
         if (!QFileInfo::exists(resolved_out) || !QFileInfo(resolved_out).isDir())
         {
-            warning(this, "ERROR", "Output directory does not exist -> " + resolved_out);
+            warning(this, "Output directory not found", "Output directory does not exist: " + resolved_out, "Choose an existing directory for the archive.");
             return;
         }
         if (!pk::ui::outs::r_u_a_valid_filename(output_name->text(), &err_msg))
         { // putujmo Rahela!
-            warning(this, "ERROR", err_msg);
+            warning(this, "Invalid archive name", err_msg);
             return;
         }
         if (file_list->count() == 0)
         {
-            warning(this, "ERROR", "No files selected.");
+            warning(this, "No files selected", "Please add at least one file or folder to encrypt.");
             return;
         }
         if (password_v->text().isEmpty() && keyfile_path_v->text().isEmpty())
         {
-            warning(this, "ERROR", "You must provide either a password or a keyfile.");
+            warning(this, "Missing credentials", "You must provide either a password or a keyfile.");
             return;
         }
         pk::crypto::kdf::kdf_cfg kdf_cfg{};
@@ -953,7 +1054,7 @@ namespace pk::ui::outs
         if (pd.exec() == QDialog::Accepted)
         {
             worker->wait();
-            info(this, "OK", "Archive successfully created.");
+            info(this, "Archive created", "Archive successfully created.");
             accept();
         }
         else
@@ -961,7 +1062,7 @@ namespace pk::ui::outs
             worker->wait(3000);
             if (!pd.what_err_msg().isEmpty() && !pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
             {
-                error(this, "Something went wrong!!!", pd.what_err_msg());
+                show_error(this, pd.what_err_msg());
             }
         }
     }
@@ -1607,12 +1708,12 @@ namespace pk::ui::outs
     {
         if (archive_list->count() == 0)
         {
-            warning(this, "ERROR", "Add at least one archive to decrypt.");
+            warning(this, "Nothing to decrypt", "Add at least one archive to the list first.");
             return;
         }
         if (output_dir_->text().isEmpty())
         {
-            warning(this, "ERROR", "Specify an output directory first.");
+            warning(this, "No output directory", "Specify an output directory first.");
             return;
         }
         bool global_has_entropy = !password_v->text().isEmpty() || !keyfile_path_v->text().isEmpty();
@@ -1630,23 +1731,32 @@ namespace pk::ui::outs
             }
             if (!all_have_custom)
             {
-                warning(this, "ERROR", "You must provide a password or keyfile (either globally or custom per-archive).");
+                warning(this, "Missing credentials", "Provide a password or keyfile (globally or per archive).");
                 return;
             }
         }
         QString base_out = output_dir_->text();
         if (!QFileInfo::exists(base_out) || !QFileInfo(base_out).isDir())
         {
-            warning(this, "ERROR", "Output directory does not exist: " + base_out);
+            warning(this, "Output directory missing", "The output directory does not exist:\n" + base_out);
             return;
         }
-        QStringList succeeded;
+        struct result_entry
+        {
+            int list_index;
+            QString archive_path;
+            QString display_name;
+        };
+        QList<result_entry> succeeded_entries;
         QStringList failed_names;
+        QStringList failed_paths;
         QStringList failed_reasons;
         for (int i = 0; i < archive_list->count(); ++i)
         {
-            QString archive_path = archive_list->item(i)->toolTip().isEmpty() ? archive_list->item(i)->text() : archive_list->item(i)->toolTip();
-            QString base_name = QFileInfo(archive_path).completeBaseName();
+            QString archive_path = archive_list->item(i)->toolTip().isEmpty()
+                                       ? archive_list->item(i)->text()
+                                       : archive_list->item(i)->toolTip();
+            QString display_name = QFileInfo(archive_path).fileName();
             QString eff_pwd = password_v->text();
             QString eff_kf = keyfile_path_v->text();
             if (__custom_entropy_.contains(archive_path))
@@ -1659,8 +1769,9 @@ namespace pk::ui::outs
             }
             if (eff_pwd.isEmpty() && eff_kf.isEmpty())
             {
-                failed_names.append(base_name);
-                failed_reasons.append("No password or keyfile provided for this archive.");
+                failed_names.append(display_name);
+                failed_paths.append(archive_path);
+                failed_reasons.append("Missing credentials; no password or keyfile set for this archive.");
                 continue;
             }
             worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
@@ -1670,50 +1781,84 @@ namespace pk::ui::outs
             w->wait();
             if (res == QDialog::Accepted)
             {
-                succeeded.append(base_name);
+                succeeded_entries.append({i, archive_path, display_name});
             }
             else
             {
-                if (pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
-                {
-                    failed_names.append(base_name);
-                    failed_reasons.append("Decryption cancelled by user.");
+                bool cancelled = pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive);
+                failed_names.append(display_name);
+                failed_paths.append(archive_path);
+                failed_reasons.append(cancelled ? "Decryption cancelled by user." : pd.what_err_msg());
+                if (cancelled)
                     break;
-                }
-                failed_names.append(base_name);
-                failed_reasons.append(pd.what_err_msg());
             }
         }
         QString summary;
-        if (!succeeded.isEmpty())
-            summary += QString("%1 archive(s) decrypted successfully:\n  \u2022 ").arg(succeeded.size()) + succeeded.join("\n  \u2022 ");
+        if (!succeeded_entries.isEmpty())
+        {
+            summary += QString("Decrypted successfully (%1 archive%2):\n\n").arg(succeeded_entries.size()).arg(succeeded_entries.size() == 1 ? "" : "s");
+            for (const auto &e : succeeded_entries)
+            {
+                summary += QString("%1\n%2\n\n").arg(e.display_name).arg(e.archive_path);
+            }
+        }
         if (!failed_names.isEmpty())
         {
-            if (!summary.isEmpty())
-                summary += "\n\n";
-            summary += QString("%1 archive(s) failed:\n").arg(failed_names.size());
+            summary += QString("Failed (%1 archive%2):\n\n").arg(failed_names.size()).arg(failed_names.size() == 1 ? "" : "s");
             for (int i = 0; i < failed_names.size(); ++i)
-                summary += QString("  \u2022 %1: %2\n").arg(failed_names[i]).arg(failed_reasons[i]);
+            {
+                QString raw_err = failed_reasons[i];
+                QString reason;
+                if (raw_err.contains("cancelled", Qt::CaseInsensitive))
+                {
+                    reason = "Decryption cancelled by user.";
+                }
+                else if (raw_err.contains("Missing credentials", Qt::CaseInsensitive))
+                {
+                    reason = "Missing password or keyfile.";
+                }
+                else
+                {
+                    auto parsed = pk::error::parse(raw_err.toStdString());
+                    if (parsed.title == "Authentication failed" ||
+                        raw_err.contains("MAC verification failed", Qt::CaseInsensitive) ||
+                        raw_err.contains("wrong password", Qt::CaseInsensitive) ||
+                        raw_err.contains("authentication tag", Qt::CaseInsensitive))
+                    {
+                        reason = "Authentication failed (wrong password or corrupted data).";
+                    }
+                    else if (!parsed.title.empty() && parsed.title != "Operation failed" && parsed.title != "Keyfile error")
+                    {
+                        reason = QString::fromStdString(parsed.title);
+                    }
+                    else
+                    {
+                        reason = QString::fromStdString(parsed.title.empty() ? "Decryption failed" : parsed.title);
+                    }
+                }
+                summary += QString("%1\n%2\nReason: %3\n\n").arg(failed_names[i]).arg(failed_paths[i]).arg(reason);
+            }
+        }
+        if (failed_names.isEmpty())
+            info(this, "Decryption completed", summary.trimmed());
+        else if (succeeded_entries.isEmpty())
+            error(this, "Decryption failed", summary.trimmed());
+        else
+            warning(this, "Decryption completed with errors", summary.trimmed());
+        if (!succeeded_entries.isEmpty() && ext_open->isChecked())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(base_out));
+        for (int k = succeeded_entries.size() - 1; k >= 0; --k)
+        {
+            const auto &e = succeeded_entries[k];
+            if (__custom_entropy_.contains(e.archive_path))
+            {
+                __custom_entropy_[e.archive_path].wipe();
+                __custom_entropy_.remove(e.archive_path);
+            }
+            delete archive_list->takeItem(e.list_index);
         }
         if (failed_names.isEmpty())
         {
-            info(this, "OK", summary);
-        }
-        else if (succeeded.isEmpty())
-        {
-            error(this, "ERROR", summary);
-        }
-        else
-        {
-            warning(this, "ERROR...?", summary);
-        }
-
-        if (!succeeded.isEmpty())
-        {
-            if (ext_open->isChecked())
-            {
-                QDesktopServices::openUrl(QUrl::fromLocalFile(base_out));
-            }
             if (!password_v->text().isEmpty())
             {
                 QString s = password_v->text();
@@ -1789,35 +1934,27 @@ namespace pk::ui::outs
     {
         if (paths.isEmpty())
             return;
-
         queue_tree->setUpdatesEnabled(false);
-
         std::unordered_set<std::string> existing_paths;
         existing_paths.reserve(m_reports.size() + paths.size());
         for (const auto &rep : m_reports)
         {
             existing_paths.insert(rep.header.___filepath.string());
         }
-
         QList<QTreeWidgetItem *> new_items;
         new_items.reserve(paths.size());
-
         bool was_empty = m_reports.empty();
         QTreeWidgetItem *first_new_item = nullptr;
-
         for (const QString &path : paths)
         {
             if (path.isEmpty() || QFileInfo(path).isDir())
                 continue;
-
             QString canonical = QFileInfo(path).canonicalFilePath();
             if (canonical.isEmpty())
                 canonical = QDir::cleanPath(path);
-
             std::string canon_std = canonical.toStdString();
             if (existing_paths.find(canon_std) != existing_paths.end())
                 continue;
-
             existing_paths.insert(canon_std);
             pk::crypto::am_i_evil::verification_report rep;
             rep.header = pk::crypto::am_i_evil::view_header(canon_std);
@@ -2116,7 +2253,6 @@ namespace pk::ui::outs
         bool any_has_entropy = false;
         bool any_has_pwd = false;
         bool any_has_kf = false;
-
         for (QTreeWidgetItem *item : selected)
         {
             QString p = item->toolTip(0);
@@ -2131,13 +2267,11 @@ namespace pk::ui::outs
                     any_has_kf = true;
             }
         }
-
         QString action_text = any_has_entropy ? "View / edit custom entropy..." : "Source custom password / keyfile...";
         QAction *act_source = menu.addAction(
             QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/key.svg")),
             action_text);
         connect(act_source, &QAction::triggered, this, &cd_am_i_evil::on_src_ce);
-
         if (any_has_pwd)
         {
             QAction *act_rm_pwd = menu.addAction("Remove custom password");
@@ -2155,8 +2289,7 @@ namespace pk::ui::outs
         }
         menu.addSeparator();
         QAction *act_remove = menu.addAction(
-            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")),
-            "Remove from list");
+            QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/rm.svg")), "Remove from list");
         connect(act_remove, &QAction::triggered, this, &cd_am_i_evil::on_remove_files);
         menu.exec(queue_tree->viewport()->mapToGlobal(pos));
     }
@@ -2425,19 +2558,15 @@ namespace pk::ui::outs
                 diag_notes << QString("(OK) Argon2id memory cost: %1 (within 2GBs safety limit).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
             else
                 diag_notes << QString("(X) Argon2id memory cost: %1 (exceeds 2GBs safety threshold).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
-
             if (rep.header.time_cost >= 1 && rep.header.time_cost <= 32)
                 diag_notes << QString("(OK) Argon2id time cost: %1 pass(es) (within 32 passes limit).").arg(rep.header.time_cost);
             else
                 diag_notes << QString("(X) Argon2id time cost: %1 pass(es) (exceeds 32 passes limit).").arg(rep.header.time_cost);
-
             if (rep.header.parallelism >= 1 && rep.header.parallelism <= 32)
                 diag_notes << QString("(OK) Argon2id parallelism: %1 lane(s) (within 1 - 32 lanes limit).").arg(rep.header.parallelism);
             else
                 diag_notes << QString("(X) Argon2id parallelism: %1 lane(s) (invalid or excessive lanes).").arg(rep.header.parallelism);
-
             diag_notes << QString("(OK) Metadata preservation: %1").arg(rep.header.has_metadata ? "enabled." : "disabled.");
-
             if (rep.header.structure_ok && rep.header.kdf_safe)
                 diag_notes << "(OK) Container health: all parameters standard and valid.";
             else
@@ -2476,7 +2605,7 @@ namespace pk::ui::outs
     {
         if (m_reports.empty())
         {
-            warning(this, "ERROR", "Add at least one archive to verify.");
+            warning(this, "No archives selected", "Add at least one archive to verify.");
             return;
         }
         bool global_has_entropy = !password_v->text().isEmpty() || !keyfile_path_v->text().isEmpty();
@@ -2494,7 +2623,7 @@ namespace pk::ui::outs
             }
             if (!all_have_custom)
             {
-                warning(this, "ERROR", "A password or keyfile is required to verify AEAD cryptographic integrity (either globally or custom per-archive); container headers are already inspected without a password.");
+                warning(this, "Credentials required", "A password or keyfile is required to verify AEAD cryptographic integrity (either globally or custom per-archive); container headers are already inspected without a password.", "Enter a password or select a keyfile before verifying integrity.");
                 return;
             }
         }
@@ -2608,34 +2737,34 @@ namespace pk::ui::outs
         QString summary;
         if (!passed_reports.isEmpty())
         {
-            summary += QString(">>> Verification passed (%1)\n").arg(passed_reports.size());
+            summary += QString(">>> Verification passed (%1)\n\n").arg(passed_reports.size());
             summary += passed_reports.join("\n\n");
         }
         if (!failed_reports.isEmpty())
         {
             if (!summary.isEmpty())
                 summary += "\n\n";
-            summary += QString(">>> Verification failed (%1)\n").arg(failed_reports.size());
+            summary += QString(">>> Verification failed (%1)\n\n").arg(failed_reports.size());
             summary += failed_reports.join("\n\n");
         }
         if (failed_reports.isEmpty())
         {
-            info(this, "OK", summary);
+            info(this, "Verification completed", summary);
         }
         else if (passed_reports.isEmpty())
         {
-            error(this, "ERROR", summary);
+            error(this, "Verification failed", summary);
         }
         else
         {
-            warning(this, "ERROR...?", summary);
+            warning(this, "Verification completed with failures", summary);
         }
     }
     void cd_am_i_evil::on_export_log()
     {
         if (m_reports.empty())
         {
-            warning(this, "ERROR", "No archive inspection data to export.");
+            warning(this, "No inspection data", "No archive inspection data to export.");
             return;
         }
         QString save_path = QFileDialog::getSaveFileName(this, "Export verification log", "mage_verification_report.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
@@ -2645,13 +2774,13 @@ namespace pk::ui::outs
         QFile file(save_path);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         {
-            error(this, "ERROR", QString("Could not open file for writing:\n%1").arg(save_path));
+            error(this, "File write error", QString("Could not open file for writing:\n%1").arg(save_path));
             return;
         }
         QTextStream out(&file);
         out << QString::fromStdString(log_content);
         file.close();
-        info(this, "OK", QString("Verification log successfully saved to:\n%1").arg(save_path));
+        info(this, "Log exported", QString("Verification log successfully saved to:\n%1").arg(save_path));
     }
     void cd_am_i_evil::on_close()
     {
@@ -3012,7 +3141,7 @@ namespace pk::ui::outs
         QString err_msg;
         if (!pk::ui::outs::valid_path_probable(def_out, &err_msg))
         {
-            warning(this, "ERROR", err_msg);
+            warning(this, "Invalid default path", err_msg);
             return;
         }
         QString ext = def_ext__->text();
@@ -3020,7 +3149,7 @@ namespace pk::ui::outs
             ext = "." + ext;
         if (!pk::ui::outs::r_u_a_valid_filename(ext, &err_msg))
         {
-            warning(this, "ERROR", err_msg);
+            warning(this, "Invalid extension", err_msg);
             return;
         }
         auto &s = pk::cfg::settings::instance();
@@ -3043,7 +3172,7 @@ namespace pk::ui::outs
         s.ss_def_ext_open(ext_open->isChecked());
         s.ss_def_ext_overwrite(ext_overwrite->currentIndex());
         s.save();
-        info(this, "OK", "Settings successfully saved.");
+        info(this, "Settings saved", "Settings successfully saved.");
     }
     void cd_settings::on_cancel()
     {
