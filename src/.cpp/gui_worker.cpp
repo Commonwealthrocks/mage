@@ -426,7 +426,7 @@ namespace pk::ui::worker
         catch (const std::exception &e)
         {
             pk::core::logger::log("exception: " + std::string(e.what()));
-            emit error(QString::fromStdString(pk::error::format(e.what())));
+            emit error(QString::fromStdString(e.what()));
         }
         catch (...)
         {
