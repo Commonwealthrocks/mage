@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 04/10/2026
+// last updated: 27/10/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -48,13 +48,13 @@ namespace pk::ui
         if (!pk::ui::outs::valid_path_probable(s.def_output_path(), &err_msg))
         {
             s.ss_def_output_path(".");
-            pk::ui::outs::info(this, "Settings", "The default output path from your settings was invalid and has been reset to '.'.\nReason: " + err_msg);
+            pk::ui::outs::info(this, "Settings reset", "The default output path from your settings was invalid and has been reset to '.'.\nReason: " + err_msg);
             settings_changed = true;
         }
         if (!pk::ui::outs::r_u_a_valid_filename(s.def_ext(), &err_msg))
         {
             s.ss_def_ext(".mage");
-            pk::ui::outs::info(this, "Settings", "The default extension from your settings was invalid and has been reset to '.mage'.\nReason: " + err_msg);
+            pk::ui::outs::info(this, "Settings reset", "The default extension from your settings was invalid and has been reset to '.mage'.\nReason: " + err_msg);
             settings_changed = true;
         }
         if (settings_changed)
