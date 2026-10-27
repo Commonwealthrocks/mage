@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 04/10/2026
+// last updated: 27/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -2354,8 +2354,13 @@ namespace pk::ui::outs
         if (rep.header.valid_magic)
         {
             cmp_str = QString::fromStdString(rep.header.compression_algo_name);
-            if (rep.header.compression_algo_id > 0)
-                cmp_str += QString(" (Level %1)").arg(rep.header.compression_level);
+            if (rep.header.compression_algo_id <= 1)
+            {
+                if (rep.header.compression_level == 0)
+                    cmp_str += " (store)";
+                else
+                    cmp_str += QString(" (level %1)").arg(rep.header.compression_level);
+            }
         }
         add_prop(cat_cmp, "Compression algorithm", cmp_str);
         add_prop(cat_cmp, "Preserves POSIX / Win32 metadata", rep.header.valid_magic ? (rep.header.has_metadata ? "yes (true)" : "no (false)") : "-");
@@ -2398,10 +2403,12 @@ namespace pk::ui::outs
                 diag_notes << QString("(OK) Cipher algorithm: %1.").arg(QString::fromStdString(rep.header.algo_name));
             else
                 diag_notes << QString("(X) Cipher algorithm: unrecognized cipher algorithm ID (%1).").arg(rep.header.algo_id);
-            if (rep.header.compression_algo_id <= 2)
+            if (rep.header.compression_algo_id <= 1)
             {
                 QString cmp = QString::fromStdString(rep.header.compression_algo_name);
-                if (rep.header.compression_algo_id > 0)
+                if (rep.header.compression_level == 0)
+                    cmp += " (store)";
+                else
                     cmp += QString(" (level %1)").arg(rep.header.compression_level);
                 diag_notes << QString("(OK) Compression: %1.").arg(cmp);
             }
