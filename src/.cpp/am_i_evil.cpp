@@ -1,5 +1,5 @@
 // am_i_evil.cpp
-// last updated: 04/10/2026
+// last updated: 27/10/2026
 // am i really that evil?
 #include "../.hpp/am_i_evil.hpp"
 #include "../.hpp/path_handler.hpp"
@@ -130,7 +130,7 @@ namespace pk::crypto::am_i_evil
         case 2:
             return "AES-256-SIV";
         default:
-            return "Unknown (" + std::to_string(id) + ")";
+            return "unknown (" + std::to_string(id) + ")";
         }
     }
     static std::string cmp_name_str(uint8_t id)
@@ -138,10 +138,8 @@ namespace pk::crypto::am_i_evil
         switch (id)
         {
         case 0:
-            return "none (store)";
-        case 1:
             return "Zstandard";
-        case 2:
+        case 1:
             return "LZMA2";
         default:
             return "unknown (" + std::to_string(id) + ")";
@@ -207,7 +205,7 @@ namespace pk::crypto::am_i_evil
             }
             return rep;
         }
-        if (hdr.algo > 2 && hdr.compression_algo > 2)
+        if (hdr.algo > 2 && hdr.compression_algo > 1)
         {
             rep.valid_magic = false;
             rep.structure_ok = false;
@@ -251,7 +249,7 @@ namespace pk::crypto::am_i_evil
             rep.structure_ok = false;
             rep.sanity_notes += "unrecognized cipher algorithm ID (" + std::to_string(hdr.algo) + "). ";
         }
-        if (hdr.compression_algo > 2)
+        if (hdr.compression_algo > 1)
         {
             rep.structure_ok = false;
             rep.sanity_notes += "unrecognized compression algorithm ID (" + std::to_string(hdr.compression_algo) + "). ";
@@ -264,7 +262,7 @@ namespace pk::crypto::am_i_evil
         else
         {
             const uint64_t payload_bytes = rep.file_size_bytes - sizeof(pk::crypto::format::header_f);
-            const uint64_t chunk_payload = hdr.chunk_size_bytes + 16; // 16-byte MAC tag
+            const uint64_t chunk_payload = hdr.chunk_size_bytes + 16;
             rep.est_chunks = (payload_bytes + chunk_payload - 1) / chunk_payload;
             rep.structure_ok = !dos_detected;
         }
@@ -336,10 +334,8 @@ namespace pk::crypto::am_i_evil
         in.read(reinterpret_cast<char *>(&header), sizeof(header));
         auto cipher = cipher::mk_cipher(static_cast<cipher::algorithm>(rep.header.algo_id));
         cipher->init(key_res.first.data(), key_res.first.size());
-        // Securely wipe master key material from RAM immediately after cipher initialization
         pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
         key_res.first.clear();
-
         const std::size_t chunk_size = rep.header.chunk_size;
         const std::size_t block_size = chunk_size + cipher->what_mac_size();
         std::vector<uint8_t> buffer(block_size);
@@ -352,7 +348,6 @@ namespace pk::crypto::am_i_evil
         std::memcpy(ad.data(), &header, sizeof(header));
         auto decompressor = pk::crypto::cmp_e::mk_dmp_e(
             static_cast<pk::crypto::cmp_e::algorithm>(rep.header.compression_algo_id));
-
         auto cleanup_sensitive = [&]()
         {
             if (!plaintext_stream.empty())
@@ -366,7 +361,6 @@ namespace pk::crypto::am_i_evil
                 buffer.clear();
             }
         };
-
         auto fetch_next_chunk = [&]()
         {
             if (cancel_cb && cancel_cb())
@@ -601,7 +595,7 @@ namespace pk::crypto::am_i_evil
         time(&rawtime);
         timeinfo = localtime(&rawtime);
         strftime(timebuf, sizeof(timebuf), "%d. %B %Y, %H:%M", timeinfo);
-        log << "MAGE Archive Verification v0.6a (build " << __DATE__ << ")\n";
+        log << "MAGE archive verification v0.6a (build " << __DATE__ << ")\n";
         log << "Verification log file from " << timebuf << "\n\n";
         log << "[!] NOTICE\n";
         log << "    This diagnostic report discloses container geometry, cryptographic parameters,\n";
@@ -663,11 +657,18 @@ namespace pk::crypto::am_i_evil
             std::string comp_str = "-";
             if (r.header.valid_magic)
             {
-                comp_str = r.header.compression_algo_name.empty() ? "None (Store)" : r.header.compression_algo_name;
-                if (comp_str == "none" || comp_str == "store" || comp_str == "None")
-                    comp_str = "None (Store)";
-                else if (r.header.compression_algo_id > 0)
-                    comp_str += " (level " + std::to_string(static_cast<int>(r.header.compression_level)) + ")";
+                if (r.header.compression_algo_id <= 1)
+                {
+                    comp_str = r.header.compression_algo_name;
+                    if (r.header.compression_level == 0)
+                        comp_str += " (store)";
+                    else
+                        comp_str += " (level " + std::to_string(static_cast<int>(r.header.compression_level)) + ")";
+                }
+                else
+                {
+                    comp_str = r.header.compression_algo_name.empty() ? "unknown (" + std::to_string(r.header.compression_algo_id) + ")" : r.header.compression_algo_name;
+                }
             }
             row.comp_str = comp_str;
             row.hdr_status = (r.header.valid_magic && r.header.structure_ok && r.header.kdf_safe) ? "OK" : "FAIL";
@@ -731,12 +732,26 @@ namespace pk::crypto::am_i_evil
             log << pad_item("Cipher algorithm", (!r.header.valid_magic || r.header.algo_name.empty()) ? "-" : r.header.algo_name);
             std::string comp_info = "-";
             if (r.header.valid_magic)
+            // maybe i should start commenting on my own code more
+            // often considering i thought alg = 0 was "none" (store)
+            // however there IS no algorithm ID that goes by 0; only
+            // the compression level for ZSTD and LZMA2 that goes down
+            // to 0 which indicates store / no compression;
+            // well i shall keep that in mind for future-self via this
+            // comment!
             {
-                comp_info = r.header.compression_algo_name.empty() ? "None (Store)" : r.header.compression_algo_name;
-                if (comp_info == "none" || comp_info == "store" || comp_info == "None")
-                    comp_info = "None (Store)";
-                else if (r.header.compression_algo_id > 0)
-                    comp_info += " (level " + std::to_string(static_cast<int>(r.header.compression_level)) + ")";
+                if (r.header.compression_algo_id <= 1)
+                {
+                    comp_info = r.header.compression_algo_name;
+                    if (r.header.compression_level == 0)
+                        comp_info += " (store)";
+                    else
+                        comp_info += " (level " + std::to_string(static_cast<int>(r.header.compression_level)) + ")";
+                }
+                else
+                {
+                    comp_info = r.header.compression_algo_name.empty() ? "unknown (" + std::to_string(r.header.compression_algo_id) + ")" : r.header.compression_algo_name;
+                }
             }
             log << pad_item("Compression", comp_info);
             log << pad_item("Preserves metadata", !r.header.valid_magic ? "-" : (r.header.has_metadata ? "yes" : "no"));
