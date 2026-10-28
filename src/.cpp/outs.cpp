@@ -351,10 +351,9 @@ namespace pk::ui::outs
         custom_msg_dialog dlg(title, message, msg_type::ask, parent);
         return dlg.exec() == QDialog::Accepted;
     }
-    cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent) : QDialog(parent), m2_worker(worker), _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+    void cd_prog_dialog::setup_ui(const QString &initial_title)
     {
-        QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
-        setWindowTitle(base_title + " - 0%");
+        setWindowTitle(initial_title);
         setFixedSize(550, 350);
         setWindowFlags(windowFlags() | Qt::Window);
         setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
@@ -413,15 +412,46 @@ namespace pk::ui::outs
         connect(timer, &QTimer::timeout, this, &cd_prog_dialog::on_update_stats);
         timer->start(500);
         elapsed.start();
-        // mk signals here
-        connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
-        connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
-        connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
-        connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
-        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
-        connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
-        connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
-        m2_worker->start();
+    }
+    cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent)
+        : QDialog(parent), m2_worker(worker), curr_job_idx(0), bm(false), is_cancelled(false),
+          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+    {
+        QString base_title = (m2_worker && m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
+        setup_ui(base_title + " - 0%");
+        if (m2_worker)
+        {
+            connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
+            connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
+            connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
+            connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
+            connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
+            connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
+            connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
+            m2_worker->start();
+        }
+    }
+    cd_prog_dialog::cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent)
+        : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
+          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+    {
+        for (const auto &j : jobs)
+        {
+            m_jobs.append({worker::crypto_worker::mode::unpack, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, j.base_out, j.ext_behavior, j.ext_overwrite});
+        }
+        setup_ui("Decrypting archive - 0%");
+        QTimer::singleShot(0, this, &cd_prog_dialog::start_next_job);
+    }
+    cd_prog_dialog::cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent)
+        : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
+          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+    {
+        for (const auto &j : jobs)
+        {
+            m_jobs.append({worker::crypto_worker::mode::am_i_evil, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, "", 0, 0});
+        }
+        setup_ui("Verifying archive - 0%");
+        QTimer::singleShot(0, this, &cd_prog_dialog::start_next_job);
     }
     cd_prog_dialog::~cd_prog_dialog()
     {
@@ -431,14 +461,119 @@ namespace pk::ui::outs
             m2_worker->wait(3000);
         }
     }
+    void cd_prog_dialog::start_next_job()
+    {
+        if (is_cancelled || curr_job_idx >= m_jobs.size())
+        {
+            if (is_cancelled)
+            {
+                for (int i = curr_job_idx; i < m_jobs.size(); ++i)
+                {
+                    bool already = false;
+                    for (const auto &r : job_res__)
+                    {
+                        if (r.list_index == m_jobs[i].list_index)
+                        {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already)
+                    {
+                        job_res__.append({m_jobs[i].list_index, m_jobs[i].archive_path, m_jobs[i].display_name, false, "Operation cancelled by user.", true, {}});
+                    }
+                }
+                reject();
+                return;
+            }
+            bool any_succeeded = false;
+            for (const auto &res : job_res__)
+            {
+                if (res.success)
+                {
+                    any_succeeded = true;
+                    break;
+                }
+            }
+            if (any_succeeded)
+            {
+                pk::ui::sfx::play_success();
+            }
+            accept();
+            return;
+        }
+        const auto &job = m_jobs[curr_job_idx];
+        last_processed = 0;
+        current_proc = 0;
+        tot_bytes = 0;
+        current_pct = 0;
+        indeterminate = true;
+        current_file_text.clear();
+        current_ac0_text.clear();
+        progress___->setRange(0, 0);
+        progress___->setFormat("Waiting...");
+        lbl_file->setText(" ");
+        lbl_proc->setText("-");
+        lbl_sped->setText("-");
+        lbl_eta->setText("-");
+        lbl_file_count->setText(QString("%1 of %2").arg(std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()))).arg(m_jobs.size()));
+        elapsed.restart();
+        QString action_verb = (job.mode == worker::crypto_worker::mode::am_i_evil) ? "Verifying archive" : "Decrypting archive";
+        lbl_overall->setText(QString("Archive %1 of %2: %3").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
+        setWindowTitle(QString("%1 (%2/%3) - %4 - 0%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
+        m2_worker = new worker::crypto_worker(job.mode);
+        if (job.mode == worker::crypto_worker::mode::am_i_evil)
+        {
+            m2_worker->ss_def_verify_params(job.archive_path, job.password, job.keyfile);
+        }
+        else
+        {
+            m2_worker->ss_def_unpk_params(job.archive_path, job.base_out, job.password, job.keyfile, job.ext_behavior, job.ext_overwrite);
+        }
+        connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
+        connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
+        connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
+        connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
+        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
+        connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
+        connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
+        m2_worker->start();
+    }
     void cd_prog_dialog::reject()
     {
+        if (is_cancelled && !m2_worker)
+        {
+            QDialog::reject();
+            return;
+        }
+        is_cancelled = true;
         if (m2_worker && m2_worker->isRunning())
         {
             m2_worker->requestInterruption();
+            m2_worker->wait(3000);
+        }
+        if (bm)
+        {
+            for (int i = curr_job_idx; i < m_jobs.size(); ++i)
+            {
+                bool already = false;
+                for (const auto &r : job_res__)
+                {
+                    if (r.list_index == m_jobs[i].list_index)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (!already)
+                {
+                    job_res__.append({m_jobs[i].list_index, m_jobs[i].archive_path, m_jobs[i].display_name, false, "Operation cancelled by user.", true, {}});
+                }
+            }
         }
         QDialog::reject();
     }
+
     void cd_prog_dialog::on_progress(int percentage)
     {
         current_pct = percentage;
@@ -449,8 +584,30 @@ namespace pk::ui::outs
         }
         progress___->setValue(percentage);
         progress___->setFormat(QString::number(percentage) + "%");
-        QString base_title = (m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
-        setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
+        if (bm)
+        {
+            QString action_verb = (curr_job_idx < m_jobs.size() && m_jobs[curr_job_idx].mode == worker::crypto_worker::mode::am_i_evil) ? "Verifying archive" : "Decrypting archive";
+            if (curr_job_idx < m_jobs.size())
+            {
+                setWindowTitle(QString("%1 (%2/%3) - %4 - %5%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(m_jobs[curr_job_idx].display_name).arg(percentage));
+            }
+            else
+            {
+                setWindowTitle(QString("%1 - %2%").arg(action_verb).arg(percentage));
+            }
+        }
+        else
+        {
+            QString base_title = "Creating archive";
+            if (m2_worker)
+            {
+                if (m2_worker->what_mode() == worker::crypto_worker::mode::unpack)
+                    base_title = "Decrypting archive";
+                else if (m2_worker->what_mode() == worker::crypto_worker::mode::am_i_evil)
+                    base_title = "Verifying archive";
+            }
+            setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
+        }
     }
     void cd_prog_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
@@ -460,8 +617,21 @@ namespace pk::ui::outs
     void cd_prog_dialog::on_current_ac0(const QString &action)
     {
         current_ac0_text = action;
-        lbl_overall->setText(action);
-
+        if (bm && curr_job_idx < m_jobs.size())
+        {
+            if (action.isEmpty() || action == "Preparing...")
+            {
+                lbl_overall->setText(QString("Archive %1 of %2: %3").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(m_jobs[curr_job_idx].display_name));
+            }
+            else
+            {
+                lbl_overall->setText(QString("Archive %1 of %2: %3 (%4)").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(m_jobs[curr_job_idx].display_name).arg(action));
+            }
+        }
+        else
+        {
+            lbl_overall->setText(action);
+        }
         bool is_kdf = action.contains("Argon2id", Qt::CaseInsensitive) || action.contains("Deriving", Qt::CaseInsensitive);
         if (is_kdf && !indeterminate)
         {
@@ -514,8 +684,6 @@ namespace pk::ui::outs
         int m = (secs % 3600) / 60;
         int s = secs % 60;
         lbl_elapsed->setText(QString("%1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0')));
-        // eta; tho calculating these on any software is practically impossible on a hardware level
-        // it's better than nothin' really
         if (current_pct > 0 && current_pct < 100 && tot_bytes > 0 && current_proc > 0)
         {
             double fraction = (double)current_proc / (double)tot_bytes;
@@ -544,7 +712,11 @@ namespace pk::ui::outs
         {
             lbl_eta->setText("-");
         }
-        if (!current_file_text.isEmpty() && tot_bytes > 0)
+        if (bm)
+        {
+            lbl_file_count->setText(QString("%1 of %2").arg(std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()))).arg(m_jobs.size()));
+        }
+        else if (!current_file_text.isEmpty() && tot_bytes > 0)
         {
             lbl_file_count->setText(QString("%1% complete").arg(current_pct));
         }
@@ -555,15 +727,93 @@ namespace pk::ui::outs
     }
     void cd_prog_dialog::on_success()
     {
-        _success = true;
-        pk::ui::sfx::play_success();
-        accept();
+        if (bm)
+        {
+            if (curr_job_idx < m_jobs.size())
+            {
+                const auto &job = m_jobs[curr_job_idx];
+                pk::crypto::am_i_evil::verification_report rep;
+                if (m2_worker)
+                    rep = m2_worker->what_report();
+                job_res__.append({job.list_index, job.archive_path, job.display_name, true, "", false, rep});
+            }
+            if (m2_worker)
+            {
+                m2_worker->wait();
+                m2_worker = nullptr;
+            }
+            curr_job_idx++;
+            start_next_job();
+        }
+        else
+        {
+            _success = true;
+            pk::ui::sfx::play_success();
+            accept();
+        }
     }
     void cd_prog_dialog::on_error(const QString &msg)
     {
-        _success = false;
-        current_err = msg;
-        reject();
+        if (bm)
+        {
+            bool is_cancel = msg.contains("cancelled", Qt::CaseInsensitive) || is_cancelled;
+            if (curr_job_idx < m_jobs.size())
+            {
+                bool already = false;
+                for (const auto &r : job_res__)
+                {
+                    if (r.list_index == m_jobs[curr_job_idx].list_index)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (!already)
+                {
+                    const auto &job = m_jobs[curr_job_idx];
+                    pk::crypto::am_i_evil::verification_report rep;
+                    if (m2_worker)
+                        rep = m2_worker->what_report();
+                    job_res__.append({job.list_index, job.archive_path, job.display_name, false, msg, is_cancel, rep});
+                }
+            }
+            if (m2_worker)
+            {
+                m2_worker->wait();
+                m2_worker = nullptr;
+            }
+            if (is_cancel || is_cancelled)
+            {
+                is_cancelled = true;
+                current_err = msg;
+                for (int i = curr_job_idx + 1; i < m_jobs.size(); ++i)
+                {
+                    bool already = false;
+                    for (const auto &r : job_res__)
+                    {
+                        if (r.list_index == m_jobs[i].list_index)
+                        {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already)
+                    {
+                        job_res__.append({m_jobs[i].list_index, m_jobs[i].archive_path, m_jobs[i].display_name, false, "Operation cancelled by user.", true, {}});
+                    }
+                }
+                reject();
+                return;
+            }
+            curr_job_idx++;
+            start_next_job();
+        }
+        else
+        {
+            _success = false;
+            current_err = msg;
+            reject();
+        }
     }
     cd_keyfile::cd_keyfile(QWidget *parent)
         : QDialog(parent)
@@ -1751,6 +2001,7 @@ namespace pk::ui::outs
         QStringList failed_names;
         QStringList failed_paths;
         QStringList failed_reasons;
+        QList<cd_prog_dialog::decrypt_job> jobs;
         for (int i = 0; i < archive_list->count(); ++i)
         {
             QString archive_path = archive_list->item(i)->toolTip().isEmpty()
@@ -1774,23 +2025,24 @@ namespace pk::ui::outs
                 failed_reasons.append("Missing credentials; no password or keyfile set for this archive.");
                 continue;
             }
-            worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::unpack);
-            w->ss_def_unpk_params(archive_path, base_out, eff_pwd, eff_kf, ext_behavior->currentIndex(), ext_overwrite->currentIndex());
-            cd_prog_dialog pd(w, this);
-            int res = pd.exec();
-            w->wait();
-            if (res == QDialog::Accepted)
+            jobs.append({i, archive_path, display_name, eff_pwd, eff_kf, base_out, ext_behavior->currentIndex(), ext_overwrite->currentIndex()});
+        }
+        if (!jobs.isEmpty())
+        {
+            cd_prog_dialog pd(jobs, this);
+            pd.exec();
+            for (const auto &r : pd.results())
             {
-                succeeded_entries.append({i, archive_path, display_name});
-            }
-            else
-            {
-                bool cancelled = pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive);
-                failed_names.append(display_name);
-                failed_paths.append(archive_path);
-                failed_reasons.append(cancelled ? "Decryption cancelled by user." : pd.what_err_msg());
-                if (cancelled)
-                    break;
+                if (r.success)
+                {
+                    succeeded_entries.append({r.list_index, r.archive_path, r.display_name});
+                }
+                else
+                {
+                    failed_names.append(r.display_name);
+                    failed_paths.append(r.archive_path);
+                    failed_reasons.append(r.cancelled ? "Decryption cancelled by user." : r.error_msg);
+                }
             }
         }
         QString summary;
@@ -2629,11 +2881,9 @@ namespace pk::ui::outs
         }
         QStringList passed_reports;
         QStringList failed_reports;
-        bool user_cancelled = false;
+        QList<cd_prog_dialog::verify_job> jobs;
         for (int i = 0; i < static_cast<int>(m_reports.size()); ++i)
         {
-            if (user_cancelled)
-                break;
             auto &rep = m_reports[i];
             QString archive_path = QString::fromStdString(rep.header.___filepath.string());
             QString base_name = QFileInfo(archive_path).fileName();
@@ -2661,73 +2911,77 @@ namespace pk::ui::outs
                 failed_reports.append(QString(">> %1:\n   - Error: No entropy source provided").arg(base_name));
                 continue;
             }
-            worker::crypto_worker *w = new worker::crypto_worker(worker::crypto_worker::mode::am_i_evil);
-            w->ss_def_verify_params(archive_path, eff_pwd, eff_kf);
-            cd_prog_dialog pd(w, this);
-            QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
-            int res = pd.exec();
-            if (res == QDialog::Accepted)
+            jobs.append({i, archive_path, base_name, eff_pwd, eff_kf});
+        }
+        if (!jobs.isEmpty())
+        {
+            cd_prog_dialog pd(jobs, this);
+            pd.exec();
+            for (const auto &res : pd.results())
             {
-                w->wait();
-                rep = w->what_report();
-                if (tree_item)
+                int i = res.list_index;
+                if (i < 0 || i >= static_cast<int>(m_reports.size()))
+                    continue;
+                auto &rep = m_reports[i];
+                QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
+                QString base_name = res.display_name;
+                if (res.success)
                 {
-                    tree_item->setText(2, "OK");
-                    tree_item->setToolTip(2, QString("authentic n' verified (OK)\n%1 / %2 chunks verified").arg(rep.verified_chunks).arg(rep.total_chunks));
-                    tree_item->setForeground(2, QColor(0x55, 0xff, 0x55));
-                }
-                QString msg = QString(">> %1:\n"
-                                      "   - Status: %2\n"
-                                      "   - AEAD chunks: %3 / %4 verified\n"
-                                      "   - Uncompressed: %5 (compression: %6%)\n"
-                                      "   - Entries: %7 file(s), %8 folder(s)")
-                                  .arg(base_name)
-                                  .arg(QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict)))
-                                  .arg(rep.verified_chunks)
-                                  .arg(rep.total_chunks)
-                                  .arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub)))
-                                  .arg(QString::number(rep.compression_ratio_percent, 'f', 1))
-                                  .arg(rep.regular_files)
-                                  .arg(rep.directories);
-                passed_reports.append(msg);
-            }
-            else
-            {
-                w->requestInterruption();
-                w->wait(3000);
-                if (pd.what_err_msg().isEmpty() || pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
-                {
-                    user_cancelled = true;
+                    rep = res.report;
                     if (tree_item)
                     {
-                        tree_item->setText(2, "CANCELLED");
-                        tree_item->setToolTip(2, "Verification cancelled by user");
-                        tree_item->setForeground(2, QColor(0xe5, 0xc0, 0x7b));
+                        tree_item->setText(2, "OK");
+                        tree_item->setToolTip(2, QString("authentic n' verified (OK)\n%1 / %2 chunks verified").arg(rep.verified_chunks).arg(rep.total_chunks));
+                        tree_item->setForeground(2, QColor(0x55, 0xff, 0x55));
                     }
-                    rep.error_details = "Verification cancelled by user.";
-                    failed_reports.append(QString(">> %1:\n   - Verification cancelled").arg(base_name));
-                    break;
+                    QString msg = QString(">> %1:\n"
+                                          "   - Status: %2\n"
+                                          "   - AEAD chunks: %3 / %4 verified\n"
+                                          "   - Uncompressed: %5 (compression: %6%)\n"
+                                          "   - Entries: %7 file(s), %8 folder(s)")
+                                      .arg(base_name)
+                                      .arg(QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict)))
+                                      .arg(rep.verified_chunks)
+                                      .arg(rep.total_chunks)
+                                      .arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub)))
+                                      .arg(QString::number(rep.compression_ratio_percent, 'f', 1))
+                                      .arg(rep.regular_files)
+                                      .arg(rep.directories);
+                    passed_reports.append(msg);
                 }
                 else
                 {
-                    auto worker_rep = w->what_report();
-                    if (worker_rep.header.file_exists)
+                    if (res.cancelled)
                     {
-                        rep = worker_rep;
+                        if (tree_item)
+                        {
+                            tree_item->setText(2, "CANCELLED");
+                            tree_item->setToolTip(2, "Verification cancelled by user");
+                            tree_item->setForeground(2, QColor(0xe5, 0xc0, 0x7b));
+                        }
+                        rep.error_details = "Verification cancelled by user.";
+                        failed_reports.append(QString(">> %1:\n   - Verification cancelled").arg(base_name));
                     }
-                    if (rep.error_details.empty())
+                    else
                     {
-                        rep.error_details = pd.what_err_msg().toStdString();
+                        if (res.report.header.file_exists)
+                        {
+                            rep = res.report;
+                        }
+                        if (rep.error_details.empty())
+                        {
+                            rep.error_details = res.error_msg.toStdString();
+                        }
+                        if (tree_item)
+                        {
+                            QString verdict_lbl = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
+                            tree_item->setText(2, "INVALID");
+                            tree_item->setToolTip(2, verdict_lbl + "\n" + QString::fromStdString(rep.error_details));
+                            tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
+                        }
+                        QString err = QString::fromStdString(rep.error_details);
+                        failed_reports.append(QString(">> %1:\n   - Error: %2").arg(base_name).arg(err));
                     }
-                    if (tree_item)
-                    {
-                        QString verdict_lbl = QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict));
-                        tree_item->setText(2, "INVALID");
-                        tree_item->setToolTip(2, verdict_lbl + "\n" + QString::fromStdString(rep.error_details));
-                        tree_item->setForeground(2, QColor(0xff, 0x55, 0x55));
-                    }
-                    QString err = QString::fromStdString(rep.error_details);
-                    failed_reports.append(QString(">> %1:\n   - Error: %2").arg(base_name).arg(err));
                 }
             }
         }
