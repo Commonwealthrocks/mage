@@ -184,6 +184,7 @@ namespace pk::ui::outs
         if (window)
         {
             BOOL dark = TRUE;
+            DwmSetWindowAttribute(reinterpret_cast<HWND>(window->winId()), 19, &dark, sizeof(dark));
             DwmSetWindowAttribute(reinterpret_cast<HWND>(window->winId()), 20, &dark, sizeof(dark));
         }
 #endif
@@ -195,7 +196,6 @@ namespace pk::ui::outs
         error,
         ask
     };
-
     class custom_msg_dialog : public QDialog
     {
     public:
@@ -232,7 +232,6 @@ namespace pk::ui::outs
             lbl_title->setWordWrap(true);
             header_layout->addWidget(lbl_title, 1, Qt::AlignVCenter);
             main_layout->addLayout(header_layout);
-
             QTextEdit *txt_message = new QTextEdit(this);
             txt_message->setPlainText(message);
             txt_message->setReadOnly(true);
@@ -248,7 +247,6 @@ namespace pk::ui::outs
                 "QScrollBar::handle:vertical { background: #444444; border-radius: 4px; min-height: 20px; }"
                 "QScrollBar::handle:vertical:hover { background: #666666; }"
                 "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }");
-
             const int dlg_w = 640;
             const int inner_w = dlg_w - 36;
             txt_message->document()->setTextWidth(inner_w);
@@ -292,7 +290,6 @@ namespace pk::ui::outs
                     btn_details->setText(visible ? "Hide details" : "Show details");
                     this->adjustSize();
                     this->setFixedSize(dlg_w, this->sizeHint().height()); });
-
                 main_layout->addWidget(btn_details);
                 main_layout->addWidget(text_details);
             }
@@ -354,57 +351,72 @@ namespace pk::ui::outs
     void cd_prog_dialog::setup_ui(const QString &initial_title)
     {
         setWindowTitle(initial_title);
-        setFixedSize(550, 350);
-        setWindowFlags(windowFlags() | Qt::Window);
-        setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
+        setFixedSize(550, 340);
+        setWindowFlags((windowFlags() | Qt::Window | Qt::WindowMinimizeButtonHint) & ~Qt::WindowCloseButtonHint);
         setModal(true);
         dont_burn_my_eyes(this);
         QVBoxLayout *layout = new QVBoxLayout(this);
         layout->setSpacing(8);
-        layout->setContentsMargins(12, 12, 12, 12);
-        QGroupBox *overall_group = new QGroupBox("Overall progress", this);
-        QVBoxLayout *overall_layout = new QVBoxLayout(overall_group);
-        overall_layout->setSpacing(4);
+        layout->setContentsMargins(16, 16, 16, 14);
+        QLabel *hdr_progress = new QLabel("Overall progress", this);
+        hdr_progress->setStyleSheet("font-weight: bold; font-size: 11pt; color: #ffffff;");
+        layout->addWidget(hdr_progress);
         lbl_overall = new QLabel("Preparing...", this);
-        lbl_overall->setStyleSheet("font-weight: bold; font-size: 10pt;");
-        overall_layout->addWidget(lbl_overall);
+        lbl_overall->setStyleSheet("font-size: 9.5pt; color: #cccccc;");
+        layout->addWidget(lbl_overall);
         lbl_file = new QLabel(" ", this);
-        lbl_file->setStyleSheet("font-size: 9pt; color: #aaaaaa;");
-        overall_layout->addWidget(lbl_file);
+        lbl_file->setStyleSheet("font-size: 9pt; color: #888888;");
+        layout->addWidget(lbl_file);
         progress___ = new QProgressBar(this);
         progress___->setRange(0, 0);
         progress___->setTextVisible(true);
         progress___->setFormat("Waiting...");
-        overall_layout->addWidget(progress___);
-        layout->addWidget(overall_group);
-        QGroupBox *stats_group = new QGroupBox("Stats", this);
-        QGridLayout *stats_layout = new QGridLayout(stats_group);
+        progress___->setFixedHeight(22);
+        layout->addWidget(progress___);
+        QFrame *sep = new QFrame(this);
+        sep->setFrameShape(QFrame::HLine);
+        sep->setStyleSheet("color: #333333; background-color: #333333; max-height: 1px;");
+        layout->addWidget(sep);
+        QLabel *hdr_stats = new QLabel("Stats", this);
+        hdr_stats->setStyleSheet("font-weight: bold; font-size: 10pt; color: #cccccc;");
+        layout->addWidget(hdr_stats);
+        QGridLayout *stats_layout = new QGridLayout();
         stats_layout->setVerticalSpacing(4);
         stats_layout->setHorizontalSpacing(16);
+        auto make_hdr = [this](const QString &t)
+        {
+            QLabel *l = new QLabel(t, this);
+            l->setStyleSheet("color: #888888; font-size: 9pt;");
+            return l;
+        };
         lbl_proc = new QLabel("-", this);
         lbl_sped = new QLabel("-", this);
         lbl_elapsed = new QLabel("00:00:00", this);
         lbl_eta = new QLabel("-", this);
         lbl_file_count = new QLabel("-", this);
         int row = 0;
-        stats_layout->addWidget(new QLabel("Processed:", this), row, 0);
+        stats_layout->addWidget(make_hdr("Processed:"), row, 0);
         stats_layout->addWidget(lbl_proc, row, 1);
         row++;
-        stats_layout->addWidget(new QLabel("Speed:", this), row, 0);
+        stats_layout->addWidget(make_hdr("Speed:"), row, 0);
         stats_layout->addWidget(lbl_sped, row, 1);
         row++;
-        stats_layout->addWidget(new QLabel("Elapsed:", this), row, 0);
+        stats_layout->addWidget(make_hdr("Elapsed:"), row, 0);
         stats_layout->addWidget(lbl_elapsed, row, 1);
         row++;
-        stats_layout->addWidget(new QLabel("ETA:", this), row, 0);
+        stats_layout->addWidget(make_hdr("ETA:"), row, 0);
         stats_layout->addWidget(lbl_eta, row, 1);
         row++;
-        stats_layout->addWidget(new QLabel("Files:", this), row, 0);
+        stats_layout->addWidget(make_hdr("Files:"), row, 0);
         stats_layout->addWidget(lbl_file_count, row, 1);
-        layout->addWidget(stats_group);
+        layout->addLayout(stats_layout);
+        layout->addStretch();
         QHBoxLayout *btn_layout = new QHBoxLayout();
         btn_layout->addStretch();
-        QPushButton *btn_cancel = new QPushButton("Cancel", this);
+        btn_sendtobk = new QPushButton("Background", this);
+        connect(btn_sendtobk, &QPushButton::clicked, this, &cd_prog_dialog::on_background);
+        btn_layout->addWidget(btn_sendtobk);
+        btn_cancel = new QPushButton("Cancel", this);
         connect(btn_cancel, &QPushButton::clicked, this, &cd_prog_dialog::reject);
         btn_layout->addWidget(btn_cancel);
         layout->addLayout(btn_layout);
@@ -455,10 +467,58 @@ namespace pk::ui::outs
     }
     cd_prog_dialog::~cd_prog_dialog()
     {
+        if (__in_bk)
+        {
+            __in_bk = false;
+            if (parentWidget())
+            {
+                parentWidget()->setWindowState((parentWidget()->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+                parentWidget()->showNormal();
+            }
+            QApplication::setQuitOnLastWindowClosed(prev_quit_ol);
+        }
+        if (tr_ico)
+        {
+            tr_ico->setContextMenu(nullptr);
+            tr_ico->hide();
+            delete tr_ico;
+            tr_ico = nullptr;
+        }
+        if (tr_menu)
+        {
+            tr_menu->hide();
+            delete tr_menu;
+            tr_menu = nullptr;
+        }
         if (m2_worker && m2_worker->isRunning())
         {
             m2_worker->requestInterruption();
-            m2_worker->wait(3000);
+            m2_worker->wait(500);
+        }
+    }
+    void cd_prog_dialog::setVisible(bool visible)
+    {
+        if (!visible && hiding_in_tr)
+        {
+            QWidget::setVisible(false);
+            return;
+        }
+        QDialog::setVisible(visible);
+    }
+    void cd_prog_dialog::cleanup_tray()
+    {
+        if (tr_ico)
+        {
+            tr_ico->setContextMenu(nullptr);
+            tr_ico->hide();
+            tr_ico->deleteLater();
+            tr_ico = nullptr;
+        }
+        if (tr_menu)
+        {
+            tr_menu->hide();
+            tr_menu->deleteLater();
+            tr_menu = nullptr;
         }
     }
     void cd_prog_dialog::start_next_job()
@@ -499,6 +559,16 @@ namespace pk::ui::outs
             {
                 pk::ui::sfx::play_success();
             }
+            else
+            {
+                pk::ui::sfx::play_error();
+            }
+            if (__in_bk)
+            {
+                restore_from_tray();
+                QApplication::alert(parentWidget() ? parentWidget() : this);
+            }
+            cleanup_tray();
             accept();
             return;
         }
@@ -508,6 +578,7 @@ namespace pk::ui::outs
         tot_bytes = 0;
         current_pct = 0;
         indeterminate = true;
+        phase_elapsed.invalidate();
         current_file_text.clear();
         current_ac0_text.clear();
         progress___->setRange(0, 0);
@@ -521,6 +592,10 @@ namespace pk::ui::outs
         QString action_verb = (job.mode == worker::crypto_worker::mode::am_i_evil) ? "Verifying archive" : "Decrypting archive";
         lbl_overall->setText(QString("Archive %1 of %2: %3").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
         setWindowTitle(QString("%1 (%2/%3) - %4 - 0%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
+        if (tr_ico && tr_ico->isVisible())
+        {
+            tr_ico->setToolTip(windowTitle());
+        }
         m2_worker = new worker::crypto_worker(job.mode);
         if (job.mode == worker::crypto_worker::mode::am_i_evil)
         {
@@ -538,19 +613,66 @@ namespace pk::ui::outs
         connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
         connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
         m2_worker->start();
+        if (__in_bk)
+        {
+            m2_worker->setPriority(QThread::LowestPriority);
+        }
     }
     void cd_prog_dialog::reject()
     {
-        if (is_cancelled && !m2_worker)
+        if (is_cancelled && (!m2_worker || !m2_worker->isRunning()))
         {
+            if (__in_bk)
+                restore_from_tray();
+            cleanup_tray();
             QDialog::reject();
             return;
         }
         is_cancelled = true;
+        if (btn_cancel)
+        {
+            btn_cancel->setEnabled(false);
+            btn_cancel->setText("Cancelling...");
+        }
+        if (btn_sendtobk)
+        {
+            btn_sendtobk->setEnabled(false);
+        }
+        if (lbl_overall)
+            lbl_overall->setText("Cancelling operation...");
+
         if (m2_worker && m2_worker->isRunning())
         {
             m2_worker->requestInterruption();
-            m2_worker->wait(3000);
+            if (!m2_worker->wait(100))
+            {
+                connect(m2_worker, &QThread::finished, this, [this]()
+                        {
+                    if (bm)
+                    {
+                        for (int i = curr_job_idx; i < m_jobs.size(); ++i)
+                        {
+                            bool already = false;
+                            for (const auto &r : job_res__)
+                            {
+                                if (r.list_index == m_jobs[i].list_index)
+                                {
+                                    already = true;
+                                    break;
+                                }
+                            }
+                            if (!already)
+                            {
+                                job_res__.append({m_jobs[i].list_index, m_jobs[i].archive_path, m_jobs[i].display_name, false, "Operation cancelled by user.", true, {}});
+                            }
+                        }
+                    }
+                    if (__in_bk)
+                        restore_from_tray();
+                    cleanup_tray();
+                    QDialog::reject(); });
+                return;
+            }
         }
         if (bm)
         {
@@ -571,11 +693,168 @@ namespace pk::ui::outs
                 }
             }
         }
+        if (__in_bk)
+            restore_from_tray();
+        cleanup_tray();
         QDialog::reject();
     }
+    void cd_prog_dialog::changeEvent(QEvent *event)
+    {
+        QDialog::changeEvent(event);
+        if (event->type() == QEvent::WindowStateChange)
+        {
+            if (isMinimized() && !__in_bk && !is_cancelled)
+            {
+                QTimer::singleShot(0, this, &cd_prog_dialog::on_background);
+            }
+        }
+    }
+    void cd_prog_dialog::on_background()
+    {
+        if (__in_bk || is_cancelled)
+            return;
+        __in_bk = true;
+        prev_quit_ol = QApplication::quitOnLastWindowClosed();
+        QApplication::setQuitOnLastWindowClosed(false);
+        if (m2_worker && m2_worker->isRunning())
+            m2_worker->setPriority(QThread::LowestPriority);
+        if (!tr_ico)
+        {
+            tr_ico = new QSystemTrayIcon(this);
+            const QDir app_dir(QCoreApplication::applicationDirPath());
+            QIcon icon = windowIcon();
+            if (icon.isNull() || icon.pixmap(32, 32).isNull())
+                icon = QApplication::windowIcon();
+            if (icon.isNull() || icon.pixmap(32, 32).isNull())
+                icon = QIcon(app_dir.absoluteFilePath("assets/imgs/s_icons/mage.ico"));
+            if (icon.isNull() || icon.pixmap(32, 32).isNull())
+                icon = QIcon(app_dir.absoluteFilePath("assets/imgs/s_icons/_/32.png"));
+            if (icon.isNull() || icon.pixmap(32, 32).isNull())
+                icon = QIcon(app_dir.absoluteFilePath("assets/imgs/s_icons/ink/mage_32.svg"));
+            tr_ico->setIcon(icon);
+            tr_menu = new QMenu(nullptr);
+            tr_menu->setStyleSheet("QMenu::separator { height: 1px; background: #444444; margin: 4px 6px; }");
+            QAction *act_bring_back = tr_menu->addAction(
+                QIcon(app_dir.absoluteFilePath("assets/imgs/ok.svg")), "Bring back");
+            connect(act_bring_back, &QAction::triggered, this, &cd_prog_dialog::restore_from_tray);
+            QAction *act_cancel = tr_menu->addAction(
+                QIcon(app_dir.absoluteFilePath("assets/imgs/cancel.svg")), "Cancel / halt");
+            connect(act_cancel, &QAction::triggered, this, &cd_prog_dialog::on_tray_cancel);
+            tr_menu->addSeparator();
+            QAction *act_force_kill = tr_menu->addAction(
+                QIcon(app_dir.absoluteFilePath("assets/imgs/warn.svg")), "Force kill (if bugged)");
+            connect(act_force_kill, &QAction::triggered, this, &cd_prog_dialog::on_force_kill);
+            tr_ico->setContextMenu(tr_menu);
+            connect(tr_ico, &QSystemTrayIcon::activated, this, &cd_prog_dialog::on_tray_activated);
+        }
+        tr_ico->setToolTip(windowTitle().isEmpty() ? "MAGE operation in background" : windowTitle());
+        tr_ico->show();
+        hiding_in_tr = true;
+        hide();
+        hiding_in_tr = false;
+        if (parentWidget())
+            parentWidget()->hide();
+    }
+    void cd_prog_dialog::on_tray_activated(QSystemTrayIcon::ActivationReason reason)
+    {
+        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
+        {
+            restore_from_tray();
+        }
+    }
+    void cd_prog_dialog::restore_from_tray()
+    {
+        if (!__in_bk)
+            return;
+        __in_bk = false;
+        if (tr_menu)
+            tr_menu->hide();
+        if (tr_ico)
+            tr_ico->hide();
+        if (m2_worker && m2_worker->isRunning())
+            m2_worker->setPriority(QThread::NormalPriority);
+        if (parentWidget())
+        {
+            parentWidget()->setWindowState((parentWidget()->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+            parentWidget()->showNormal();
+            parentWidget()->raise();
+            dont_burn_my_eyes(parentWidget());
+        }
+        setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+        showNormal();
+        raise();
+        activateWindow();
+        dont_burn_my_eyes(this);
+#ifdef _WIN32
+        SetForegroundWindow(reinterpret_cast<HWND>(winId()));
+#endif
+        QApplication::setQuitOnLastWindowClosed(prev_quit_ol);
+    }
+    void cd_prog_dialog::on_tray_cancel()
+    {
+        restore_from_tray();
+        reject();
+    }
+    void cd_prog_dialog::on_force_kill()
+    {
+        is_cancelled = true;
+        force_taskkill = true;
+        current_err = "Operation cancelled (force killed).";
+        if (timer)
+            timer->stop();
 
+        if (m2_worker)
+        {
+            QString partial_out;
+            if (m2_worker->what_mode() == worker::crypto_worker::mode::pack)
+            {
+                partial_out = QString::fromUtf8(m2_worker->what_out_path().c_str());
+            }
+            m2_worker->disconnect(this);
+            if (m2_worker->isRunning())
+            {
+                m2_worker->requestInterruption();
+                if (!m2_worker->wait(150))
+                {
+                    m2_worker->terminate();
+                    m2_worker->wait(500);
+                }
+            }
+            m2_worker = nullptr;
+            if (!partial_out.isEmpty() && QFileInfo::exists(partial_out))
+            {
+                QFile::remove(partial_out);
+            }
+        }
+        if (bm)
+        {
+            for (int i = curr_job_idx; i < m_jobs.size(); ++i)
+            {
+                bool already = false;
+                for (const auto &r : job_res__)
+                {
+                    if (r.list_index == m_jobs[i].list_index)
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+                if (!already)
+                {
+                    job_res__.append({m_jobs[i].list_index, m_jobs[i].archive_path, m_jobs[i].display_name, false, "Operation force killed by user.", true, {}});
+                }
+            }
+        }
+        if (__in_bk)
+            restore_from_tray();
+        cleanup_tray();
+        QDialog::reject();
+    }
     void cd_prog_dialog::on_progress(int percentage)
     {
+        percentage = std::clamp(percentage, 0, 100);
+        if (percentage < current_pct)
+            percentage = current_pct;
         current_pct = percentage;
         if (indeterminate)
         {
@@ -608,9 +887,15 @@ namespace pk::ui::outs
             }
             setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
         }
+        if (tr_ico && tr_ico->isVisible())
+        {
+            tr_ico->setToolTip(windowTitle());
+        }
     }
     void cd_prog_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
+        if (tot_bytes == 0 && total > 0)
+            phase_elapsed.restart();
         current_proc = processed;
         tot_bytes = total;
     }
@@ -633,10 +918,14 @@ namespace pk::ui::outs
             lbl_overall->setText(action);
         }
         bool is_kdf = action.contains("Argon2id", Qt::CaseInsensitive) || action.contains("Deriving", Qt::CaseInsensitive);
-        if (is_kdf && !indeterminate)
+        if (is_kdf && current_pct == 0 && !indeterminate)
         {
             indeterminate = true;
             progress___->setRange(0, 0);
+            progress___->setFormat("Deriving key...");
+        }
+        else if (is_kdf && indeterminate)
+        {
             progress___->setFormat("Deriving key...");
         }
         else if (!is_kdf && indeterminate)
@@ -661,7 +950,7 @@ namespace pk::ui::outs
         {
             return QString::fromStdString(pk::crypto::am_i_evil::format_bytes(s));
         };
-        uint64_t bytes_delta = current_proc - last_processed;
+        uint64_t bytes_delta = (current_proc >= last_processed) ? (current_proc - last_processed) : 0;
         last_processed = current_proc;
         double speed_bytes_s = (double)bytes_delta * 2.0;
         if (speed_bytes_s >= 1024.0 * 1024.0)
@@ -687,10 +976,11 @@ namespace pk::ui::outs
         if (current_pct > 0 && current_pct < 100 && tot_bytes > 0 && current_proc > 0)
         {
             double fraction = (double)current_proc / (double)tot_bytes;
-            if (fraction > 0.001)
+            qint64 byte_ms = phase_elapsed.isValid() ? phase_elapsed.elapsed() : total_ms;
+            if (fraction > 0.001 && byte_ms > 0)
             {
-                double est_total_ms = (double)total_ms / fraction;
-                double remaining_ms = est_total_ms - (double)total_ms;
+                double est_total_ms = (double)byte_ms / fraction;
+                double remaining_ms = est_total_ms - (double)byte_ms;
                 qint64 rem_secs = (qint64)(remaining_ms / 1000.0);
                 if (rem_secs < 0)
                     rem_secs = 0;
@@ -749,6 +1039,12 @@ namespace pk::ui::outs
         {
             _success = true;
             pk::ui::sfx::play_success();
+            if (__in_bk)
+            {
+                restore_from_tray();
+                QApplication::alert(parentWidget() ? parentWidget() : this);
+            }
+            cleanup_tray();
             accept();
         }
     }
@@ -812,6 +1108,17 @@ namespace pk::ui::outs
         {
             _success = false;
             current_err = msg;
+            bool is_cancel = is_cancelled || msg.contains("cancelled", Qt::CaseInsensitive);
+            if (!is_cancel)
+            {
+                pk::ui::sfx::play_error();
+            }
+            if (__in_bk)
+            {
+                restore_from_tray();
+                QApplication::alert(parentWidget() ? parentWidget() : this);
+            }
+            cleanup_tray();
             reject();
         }
     }
@@ -1156,9 +1463,17 @@ namespace pk::ui::outs
     }
     void cd_mk_archive::on_browse_output()
     {
-        QString path = QFileDialog::getExistingDirectory(this, "Select output directory");
-        if (!path.isEmpty())
-            output_dir->setText(path);
+        QFileDialog dialog(this, "Select output directory");
+        dialog.setFileMode(QFileDialog::Directory);
+        dialog.setOption(QFileDialog::ShowDirsOnly, true);
+        dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+        dont_burn_my_eyes(&dialog);
+        if (dialog.exec() == QDialog::Accepted)
+        {
+            QStringList dirs = dialog.selectedFiles();
+            if (!dirs.isEmpty())
+                output_dir->setText(dirs.first());
+        }
     }
     void cd_mk_archive::on_add_files()
     {
@@ -1172,6 +1487,7 @@ namespace pk::ui::outs
         dialog.setFileMode(QFileDialog::Directory);
         dialog.setOption(QFileDialog::DontUseNativeDialog, true);
         dialog.setOption(QFileDialog::ShowDirsOnly, true);
+        dont_burn_my_eyes(&dialog);
         QListView *l = dialog.findChild<QListView *>("listView");
         if (l)
             l->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -1219,7 +1535,6 @@ namespace pk::ui::outs
             resolved_out = fi.absolutePath();
             output_dir->setText(resolved_out);
         }
-
         QString err_msg;
         if (!pk::ui::outs::valid_path_probable(resolved_out, &err_msg))
         {
@@ -1300,17 +1615,20 @@ namespace pk::ui::outs
             comp_algo,
             comp_level,
             chunk_size_used->value());
+        QPointer<worker::crypto_worker> safe_worker(worker);
         cd_prog_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
-            worker->wait();
+            if (safe_worker)
+                safe_worker->wait();
             info(this, "Archive created", "Archive successfully created.");
             accept();
         }
         else
         {
-            worker->wait(3000);
-            if (!pd.what_err_msg().isEmpty() && !pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
+            if (safe_worker && !pd.was_force_killed())
+                safe_worker->wait(500);
+            if (!pd.was_cancelled() && !pd.what_err_msg().isEmpty() && !pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
             {
                 show_error(this, pd.what_err_msg());
             }
@@ -1377,7 +1695,6 @@ namespace pk::ui::outs
                 "QTabBar QToolButton { width: 0px; height: 0px; max-width: 0px; max-height: 0px; padding: 0px; margin: 0px; border: none; background: transparent; }");
             if (m_tabs->tabBar())
                 m_tabs->tabBar()->installEventFilter(this);
-
             for (int i = 0; i < targets.size(); ++i)
             {
                 QString fn = QFileInfo(targets[i].first).fileName();
@@ -1389,10 +1706,8 @@ namespace pk::ui::outs
                 m_tabs->setTabToolTip(i, QString("%1\n%2").arg(fn, targets[i].first));
             }
             main_layout->addWidget(m_tabs, 1);
-
             QPushButton *btn_apply_all = new QPushButton(
-                QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")),
-                " Apply current tab's entropy to all selected archives", this);
+                QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Apply current tab's entropy to all selected archives", this);
             btn_apply_all->setToolTip("Copy the password and keyfile settings from the active tab to all other tabs in this selection");
             connect(btn_apply_all, &QPushButton::clicked, this, &cd_gib_entropy::on_apply_to_all);
             main_layout->addWidget(btn_apply_all);
@@ -1950,9 +2265,17 @@ namespace pk::ui::outs
     }
     void cd_decrypt_archive::on_browse_output()
     {
-        QString dir = QFileDialog::getExistingDirectory(this, "Select output directory");
-        if (!dir.isEmpty())
-            output_dir_->setText(dir);
+        QFileDialog dialog(this, "Select output directory");
+        dialog.setFileMode(QFileDialog::Directory);
+        dialog.setOption(QFileDialog::ShowDirsOnly, true);
+        dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+        dont_burn_my_eyes(&dialog);
+        if (dialog.exec() == QDialog::Accepted)
+        {
+            QStringList dirs = dialog.selectedFiles();
+            if (!dirs.isEmpty())
+                output_dir_->setText(dirs.first());
+        }
     }
     void cd_decrypt_archive::on_decrypt()
     {
