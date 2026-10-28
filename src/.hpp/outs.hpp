@@ -1,5 +1,5 @@
 // outs.hpp
-// last updated: 27/10/2026
+// last updated: 28/10/2026
 #pragma once
 #include <QString>
 #include <QWidget>
@@ -29,7 +29,6 @@ namespace pk::ui::outs
         QString password;
         bool has_keyfile = false;
         QString keyfile_path;
-
         bool has_any() const { return has_password || has_keyfile; }
         QString badge_tag() const
         {
@@ -43,7 +42,6 @@ namespace pk::ui::outs
         }
         void wipe();
     };
-
     class cd_gib_entropy : public QDialog
     {
         Q_OBJECT
@@ -54,7 +52,6 @@ namespace pk::ui::outs
 
     protected:
         bool eventFilter(QObject *watched, QEvent *event) override;
-
     private slots:
         void on_apply_to_all();
         void on_save();
@@ -70,9 +67,7 @@ namespace pk::ui::outs
             QPushButton *btn_browse_kf = nullptr;
             QPushButton *btn_clear_kf = nullptr;
         };
-
         QWidget *create_page(const QString &file_path, const custom_entropy &entropy, archive_tab_ui &ui_ref);
-
         QList<archive_tab_ui> m_tab_uis;
         QTabWidget *m_tabs = nullptr;
         QList<custom_entropy> m_results;
@@ -91,10 +86,43 @@ namespace pk::ui::outs
     {
         Q_OBJECT
     public:
+        struct decrypt_job
+        {
+            int list_index;
+            QString archive_path;
+            QString display_name;
+            QString password;
+            QString keyfile;
+            QString base_out;
+            int ext_behavior;
+            int ext_overwrite;
+        };
+        struct verify_job
+        {
+            int list_index;
+            QString archive_path;
+            QString display_name;
+            QString password;
+            QString keyfile;
+        };
+        struct job_result
+        {
+            int list_index;
+            QString archive_path;
+            QString display_name;
+            bool success = false;
+            QString error_msg;
+            bool cancelled = false;
+            pk::crypto::am_i_evil::verification_report report;
+        };
         explicit cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent = nullptr);
+        explicit cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent = nullptr);
+        explicit cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent = nullptr);
         ~cd_prog_dialog() override;
         void reject() override;
         QString what_err_msg() const { return current_err; }
+        QList<job_result> results() const { return job_res__; }
+        bool was_cancelled() const { return is_cancelled; }
     private slots:
         void on_progress(int percentage);
         void on_pr_details(uint64_t processed, uint64_t total);
@@ -103,9 +131,28 @@ namespace pk::ui::outs
         void on_update_stats();
         void on_current_ac0(const QString &action);
         void on_current_file(const QString &file);
+        void start_next_job();
 
     private:
+        struct internal_job
+        {
+            worker::crypto_worker::mode mode;
+            int list_index;
+            QString archive_path;
+            QString display_name;
+            QString password;
+            QString keyfile;
+            QString base_out;
+            int ext_behavior = 0;
+            int ext_overwrite = 0;
+        };
+        void setup_ui(const QString &initial_title);
         worker::crypto_worker *m2_worker;
+        QList<internal_job> m_jobs;
+        QList<job_result> job_res__;
+        int curr_job_idx;
+        bool bm;
+        bool is_cancelled;
         QProgressBar *progress___;
         QLabel *lbl_overall;
         QLabel *lbl_file;
@@ -233,7 +280,6 @@ namespace pk::ui::outs
         void dragEnterEvent(QDragEnterEvent *event) override;
         void dropEvent(QDropEvent *event) override;
         void resizeEvent(QResizeEvent *event) override;
-
     private slots:
         void on_add_files();
         void on_remove_files();
@@ -257,7 +303,6 @@ namespace pk::ui::outs
         void adjust_qc();
         void adjust_pc();
         void refresh_item_display(QTreeWidgetItem *item, const QString &path);
-
         QTreeWidget *queue_tree;
         QLabel *lbl_queue_summary;
         QLineEdit *txt_current_path;
