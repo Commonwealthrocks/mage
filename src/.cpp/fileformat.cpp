@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 27/10/2026
+// last updated: 28/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -109,7 +109,7 @@ namespace pk::crypto::format
         }
         pk::core::logger::log("key derived successfully.");
         if (status_cb)
-            status_cb("encrypting " + std::to_string(entries.size()) + " files...");
+            status_cb("Encrypting " + std::to_string(entries.size()) + " file(s)...");
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
         pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
@@ -210,7 +210,13 @@ namespace pk::crypto::format
             current_file = entry.relative_path;
             if (progress_cb)
             {
-                progress_cb(processed_bytes, total_bytes, current_file);
+                auto now = std::chrono::steady_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
+                if (ms >= 50)
+                {
+                    progress_cb(processed_bytes, total_bytes, current_file);
+                    last_emit_time = now;
+                }
             }
             uint16_t path_len = static_cast<uint16_t>(entry.relative_path.size());
             write_stream(&path_len, sizeof(path_len));
@@ -298,7 +304,6 @@ namespace pk::crypto::format
         if (ec_out)
             throw std::runtime_error("failed to create destination directory: " + ec_out.message());
         uint64_t total_bytes = std::filesystem::file_size(in_path);
-        uint64_t processed_bytes = 0;
         std::ifstream in(in_path, std::ios::binary);
         if (!in)
             throw std::runtime_error("failed to open input file");
@@ -326,12 +331,12 @@ namespace pk::crypto::format
             throw std::runtime_error("corrupted or malicious archive -> invalid parallelism");
         kdf_cfg.hash_length = (header.algo == static_cast<uint8_t>(cipher::algorithm::aes_256_siv)) ? 64 : 32;
         if (status_cb)
-            status_cb("deriving encryption key...");
+            status_cb("Deriving encryption key...");
         auto key_res = pk::crypto::kdf::derive_key(password, header.salt, 16, kdf_cfg);
         if (!pk::crypto::kdf::ok(key_res.second))
             throw std::runtime_error("key derivation failed");
         if (status_cb)
-            status_cb("extracting files...");
+            status_cb("Extracting files...");
         std::size_t chunk_size = header.chunk_size_bytes;
         if (chunk_size < 1024 * 1024 || chunk_size > 64 * 1024 * 1024)
             throw std::runtime_error("corrupted archive -> invalid chunk size");
@@ -368,6 +373,7 @@ namespace pk::crypto::format
         std::vector<uint8_t> ad(sizeof(header) + sizeof(uint64_t));
         std::memcpy(ad.data(), &header, sizeof(header));
         std::string current_file;
+        auto last_emit_time = std::chrono::steady_clock::now();
         auto decompressor = pk::crypto::cmp_e::mk_dmp_e(
             static_cast<pk::crypto::cmp_e::algorithm>(header.compression_algo));
         auto fetch_next_chunk = [&]()
@@ -394,9 +400,6 @@ namespace pk::crypto::format
             plaintext_stream.assign(pt.begin(), pt.end());
             plaintext_pos = 0;
             chunk_index++;
-            processed_bytes += bytes_read;
-            if (progress_cb)
-                progress_cb(processed_bytes, total_bytes, current_file);
         };
         auto read_from_stream = [&](void *out_data, std::size_t size)
         {
@@ -443,12 +446,32 @@ namespace pk::crypto::format
             }
         }
         uint64_t aoz = 0;
+        uint64_t extracted_bytes = 0;
         uint32_t num_entries = 0;
         read_from_stream(&num_entries, sizeof(num_entries));
         if (num_entries > 1000000)
         {
             throw std::runtime_error("corrupted archive or too many files (limit: 1,000,000)");
         }
+        auto emit_unpack_progress = [&](bool force, uint32_t entry_idx)
+        {
+            if (!progress_cb)
+                return;
+            auto now = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
+            if (force || ms >= 50)
+            {
+                if (total_origin_size > 0)
+                {
+                    progress_cb(std::min(extracted_bytes, total_origin_size), total_origin_size, current_file);
+                }
+                else if (num_entries > 0)
+                {
+                    progress_cb(std::min<uint64_t>(entry_idx, num_entries), num_entries, current_file);
+                }
+                last_emit_time = now;
+            }
+        };
         for (uint32_t i = 0; i < num_entries; ++i)
         {
             uint16_t path_len = 0;
@@ -456,10 +479,7 @@ namespace pk::crypto::format
             std::string rel_path(path_len, '\0');
             read_from_stream(rel_path.data(), path_len);
             current_file = rel_path;
-            if (progress_cb)
-            {
-                progress_cb(processed_bytes, total_bytes, current_file);
-            }
+            emit_unpack_progress(false, i);
             uint8_t is_dir = 0;
             read_from_stream(&is_dir, sizeof(is_dir));
             uint64_t file_size = 0;
@@ -541,19 +561,23 @@ namespace pk::crypto::format
                     {
                         action = overwrite_ask_cb(target_path.string());
                     }
-                    if (action == 0) // Cancel
+                    if (action == 0)
                     {
                         throw std::runtime_error("extraction cancelled by user due to file conflict.");
                     }
-                    else if (action == 1) // Skip
+                    else if (action == 1)
                     {
                         uint64_t remaining = file_size;
                         std::vector<char> dummy(std::min(chunk_size, std::size_t(1024 * 1024)));
                         while (remaining > 0)
                         {
+                            if (cancel_cb && cancel_cb())
+                                throw std::runtime_error("operation cancelled by user.");
                             std::size_t to_read = static_cast<std::size_t>(std::min<uint64_t>(remaining, dummy.size()));
                             read_from_stream(dummy.data(), to_read);
                             remaining -= to_read;
+                            extracted_bytes += to_read;
+                            emit_unpack_progress(false, i);
                         }
                         continue;
                     }
@@ -600,6 +624,8 @@ namespace pk::crypto::format
                     read_from_stream(write_buf.data(), to_write);
                     out.write(write_buf.data(), to_write);
                     remaining -= to_write;
+                    extracted_bytes += to_write;
+                    emit_unpack_progress(false, i);
                 }
                 out.close(); // q
             }
@@ -674,6 +700,8 @@ namespace pk::crypto::format
                 }
             }
         }
+        extracted_bytes = total_origin_size;
+        emit_unpack_progress(true, num_entries);
     }
 }
 
