@@ -1,5 +1,5 @@
 // gui_worker.hpp
-// last updated: 04/10/2026
+// last updated: 28/10/2026
 #pragma once
 #include <QThread>
 #include <QString>
@@ -22,6 +22,7 @@ namespace pk::ui::worker
         explicit crypto_worker(mode m, QObject *parent = nullptr);
         ~crypto_worker() override = default;
         mode what_mode() const { return __mode; }
+        const std::string &what_out_path() const { return output_path; }
         const pk::crypto::am_i_evil::verification_report &what_report() const { return verify_rep; }
         void ss_def_pk_params(
             const std::vector<std::string> &roots,
