@@ -20,6 +20,9 @@
 #include <QMap>
 #include <QPair>
 #include <QTabWidget>
+#include <QSystemTrayIcon>
+#include <QPointer>
+#include <QMenu>
 #include "../.hpp/gui_worker.hpp"
 namespace pk::ui::outs
 {
@@ -119,10 +122,15 @@ namespace pk::ui::outs
         explicit cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent = nullptr);
         explicit cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent = nullptr);
         ~cd_prog_dialog() override;
+        void setVisible(bool visible) override;
         void reject() override;
         QString what_err_msg() const { return current_err; }
         QList<job_result> results() const { return job_res__; }
         bool was_cancelled() const { return is_cancelled; }
+        bool was_force_killed() const { return force_taskkill; }
+
+    protected:
+        void changeEvent(QEvent *event) override;
     private slots:
         void on_progress(int percentage);
         void on_pr_details(uint64_t processed, uint64_t total);
@@ -132,6 +140,11 @@ namespace pk::ui::outs
         void on_current_ac0(const QString &action);
         void on_current_file(const QString &file);
         void start_next_job();
+        void on_background();
+        void on_tray_activated(QSystemTrayIcon::ActivationReason reason);
+        void restore_from_tray();
+        void on_tray_cancel();
+        void on_force_kill();
 
     private:
         struct internal_job
@@ -147,7 +160,8 @@ namespace pk::ui::outs
             int ext_overwrite = 0;
         };
         void setup_ui(const QString &initial_title);
-        worker::crypto_worker *m2_worker;
+        void cleanup_tray();
+        QPointer<worker::crypto_worker> m2_worker;
         QList<internal_job> m_jobs;
         QList<job_result> job_res__;
         int curr_job_idx;
@@ -163,6 +177,7 @@ namespace pk::ui::outs
         QLabel *lbl_file_count;
         QTimer *timer;
         QElapsedTimer elapsed;
+        QElapsedTimer phase_elapsed;
         uint64_t last_processed;
         uint64_t current_proc;
         uint64_t tot_bytes;
@@ -172,6 +187,14 @@ namespace pk::ui::outs
         QString current_err;
         QString current_ac0_text;
         QString current_file_text;
+        bool __in_bk = false;
+        bool hiding_in_tr = false;
+        bool prev_quit_ol = true;
+        bool force_taskkill = false;
+        QSystemTrayIcon *tr_ico = nullptr;
+        QMenu *tr_menu = nullptr;
+        QPushButton *btn_cancel = nullptr;
+        QPushButton *btn_sendtobk = nullptr;
     };
     class cd_keyfile : public QDialog
     {
