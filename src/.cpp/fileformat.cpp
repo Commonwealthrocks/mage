@@ -29,7 +29,8 @@ namespace pk::crypto::format
         std::size_t chunk_size,
         std::function<void(uint64_t, uint64_t, const std::string &)> progress_cb,
         std::function<void(const std::string &)> status_cb,
-        std::function<bool()> cancel_cb)
+        std::function<bool()> cancel_cb,
+        std::function<void(uint64_t, uint64_t)> entry_cb)
     {
         uint64_t total_bytes = sizeof(uint64_t) + sizeof(uint32_t);
         for (const auto &e : entries)
@@ -43,6 +44,8 @@ namespace pk::crypto::format
                 total_bytes += e.file_size;
         }
         uint64_t processed_bytes = 0;
+        uint64_t completed_entries = 0;
+        const uint64_t total_entries = entries.size();
         auto last_emit_time = std::chrono::steady_clock::now();
         std::string current_file;
         std::filesystem::path p_out(out_path);
@@ -110,6 +113,10 @@ namespace pk::crypto::format
         pk::core::logger::log("key derived successfully.");
         if (status_cb)
             status_cb("Encrypting " + std::to_string(entries.size()) + " file(s)...");
+        if (entry_cb)
+            entry_cb(0, total_entries);
+        if (progress_cb)
+            progress_cb(0, total_bytes, "");
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
         pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
@@ -186,13 +193,16 @@ namespace pk::crypto::format
                 write_to_encrypt_buffer(data, size);
             }
             processed_bytes += size;
-            if (progress_cb)
+            if (progress_cb || entry_cb)
             {
                 auto now = std::chrono::steady_clock::now();
                 auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
-                if (ms >= 100 || processed_bytes == total_bytes)
+                if (ms >= 50 || processed_bytes == total_bytes)
                 {
-                    progress_cb(processed_bytes, total_bytes, current_file);
+                    if (entry_cb)
+                        entry_cb(completed_entries, total_entries);
+                    if (progress_cb)
+                        progress_cb(processed_bytes, total_bytes, current_file);
                     last_emit_time = now;
                 }
             }
@@ -208,13 +218,16 @@ namespace pk::crypto::format
         for (const auto &entry : entries)
         {
             current_file = entry.relative_path;
-            if (progress_cb)
+            if (progress_cb || entry_cb)
             {
                 auto now = std::chrono::steady_clock::now();
                 auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
                 if (ms >= 50)
                 {
-                    progress_cb(processed_bytes, total_bytes, current_file);
+                    if (entry_cb)
+                        entry_cb(completed_entries, total_entries);
+                    if (progress_cb)
+                        progress_cb(processed_bytes, total_bytes, current_file);
                     last_emit_time = now;
                 }
             }
@@ -273,6 +286,7 @@ namespace pk::crypto::format
                     throw std::runtime_error("failed to read complete file: " + entry.source_path.string());
                 }
             }
+            completed_entries++;
         }
         if (compressor)
         {
@@ -284,6 +298,8 @@ namespace pk::crypto::format
         }
         flush_chunk();
         op_success = true;
+        if (entry_cb)
+            entry_cb(total_entries, total_entries);
         if (progress_cb)
             progress_cb(total_bytes, total_bytes, current_file);
     }
@@ -297,7 +313,8 @@ namespace pk::crypto::format
         std::function<void(uint64_t, uint64_t, const std::string &)> progress_cb,
         std::function<bool()> zipbomb_cb,
         std::function<void(const std::string &)> status_cb,
-        std::function<bool()> cancel_cb)
+        std::function<bool()> cancel_cb,
+        std::function<void(uint64_t, uint64_t)> entry_cb)
     {
         std::error_code ec_out;
         std::filesystem::create_directories(out_dir, ec_out);
@@ -455,23 +472,31 @@ namespace pk::crypto::format
         }
         auto emit_unpack_progress = [&](bool force, uint32_t entry_idx)
         {
-            if (!progress_cb)
+            if (!progress_cb && !entry_cb)
                 return;
             auto now = std::chrono::steady_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
             if (force || ms >= 50)
             {
-                if (total_origin_size > 0)
+                if (entry_cb)
                 {
-                    progress_cb(std::min(extracted_bytes, total_origin_size), total_origin_size, current_file);
+                    entry_cb(std::min<uint64_t>(entry_idx, num_entries), num_entries);
                 }
-                else if (num_entries > 0)
+                if (progress_cb)
                 {
-                    progress_cb(std::min<uint64_t>(entry_idx, num_entries), num_entries, current_file);
+                    if (total_origin_size > 0)
+                    {
+                        progress_cb(std::min(extracted_bytes, total_origin_size), total_origin_size, current_file);
+                    }
+                    else if (num_entries > 0)
+                    {
+                        progress_cb(std::min<uint64_t>(entry_idx, num_entries), num_entries, current_file);
+                    }
                 }
                 last_emit_time = now;
             }
         };
+        emit_unpack_progress(true, 0);
         for (uint32_t i = 0; i < num_entries; ++i)
         {
             uint16_t path_len = 0;
