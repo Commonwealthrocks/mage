@@ -1,5 +1,5 @@
 // gui.cpp
-// last updated: 27/10/2026
+// last updated: 29/10/2026
 // not to be confused, this isn't where all of the main gui elements live at all
 #include "../.hpp/gui.hpp"
 #include <QDir>
@@ -38,10 +38,7 @@ namespace pk::ui
                 { this->handle_args("decrypt", path); });
         connect(ipc, &pk::ipc::ipc_server::rq_ver, this, [this](const QString &path)
                 { this->handle_args("verify", path); });
-#ifdef _WIN32
-        BOOL dark = TRUE;
-        DwmSetWindowAttribute(reinterpret_cast<HWND>(this->winId()), 20, &dark, sizeof(dark));
-#endif
+        pk::ui::outs::dont_burn_my_eyes(this);
         bool settings_changed = false;
         auto &s = pk::cfg::settings::instance();
         QString err_msg;
