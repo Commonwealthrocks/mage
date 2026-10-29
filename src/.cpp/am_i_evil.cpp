@@ -1,5 +1,5 @@
 // am_i_evil.cpp
-// last updated: 27/10/2026
+// last updated: 29/10/2026
 // am i really that evil?
 #include "../.hpp/am_i_evil.hpp"
 #include "../.hpp/path_handler.hpp"
@@ -277,7 +277,8 @@ namespace pk::crypto::am_i_evil
         const std::filesystem::path &archive_path,
         std::string_view password,
         std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb,
-        std::function<bool()> cancel_cb)
+        std::function<bool()> cancel_cb,
+        std::function<void(const std::string &current_file, uint64_t done_entries, uint64_t total_entries)> entry_cb)
     {
         verification_report rep;
         rep.header = view_header(archive_path);
@@ -321,6 +322,8 @@ namespace pk::crypto::am_i_evil
             rep.error_details = "Key derivation failed.";
             return rep;
         }
+        if (progress_cb)
+            progress_cb(0, total_bytes, "Verifying archive integrity...");
         std::ifstream in(archive_path, std::ios::binary);
         if (!in)
         {
@@ -348,6 +351,7 @@ namespace pk::crypto::am_i_evil
         std::memcpy(ad.data(), &header, sizeof(header));
         auto decompressor = pk::crypto::cmp_e::mk_dmp_e(
             static_cast<pk::crypto::cmp_e::algorithm>(rep.header.compression_algo_id));
+        bool stream_header_ready = false;
         auto cleanup_sensitive = [&]()
         {
             if (!plaintext_stream.empty())
@@ -399,9 +403,9 @@ namespace pk::crypto::am_i_evil
                 chunk_index++;
                 rep.verified_chunks++;
                 processed_bytes += bytes_read;
-                if (progress_cb)
+                if (progress_cb && !stream_header_ready)
                 {
-                    progress_cb(processed_bytes, total_bytes, "Verifying chunk #" + std::to_string(chunk_index) + "...");
+                    progress_cb(0, total_bytes, "Verifying chunk #" + std::to_string(chunk_index) + "...");
                 }
             }
             catch (const std::exception &e)
@@ -478,7 +482,39 @@ namespace pk::crypto::am_i_evil
                 return rep;
             }
             rep.total_entries = num_entries;
+            stream_header_ready = true;
             uint64_t accumulated_origin_bytes = 0;
+            uint64_t vsb = 0;
+            std::string last_norm_path;
+            auto last_emit_time = std::chrono::steady_clock::now();
+            auto emit_verify_prog = [&](bool force, const std::string &cur_path, uint32_t entry_idx)
+            {
+                if (!progress_cb && !entry_cb)
+                    return;
+                auto now = std::chrono::steady_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_emit_time).count();
+                if (force || ms >= 50)
+                {
+                    if (entry_cb)
+                    {
+                        entry_cb(cur_path, std::min<uint64_t>(entry_idx, num_entries), num_entries);
+                    }
+                    if (progress_cb)
+                    {
+                        std::string st = "Verifying chunk #" + std::to_string(std::max<uint64_t>(1, chunk_index)) + "...";
+                        if (total_origin_size > 0)
+                        {
+                            progress_cb(std::min(vsb, total_origin_size), total_origin_size, st);
+                        }
+                        else
+                        {
+                            progress_cb(std::min<uint64_t>(entry_idx, std::max<uint32_t>(1, num_entries)), std::max<uint64_t>(1, num_entries), st);
+                        }
+                    }
+                    last_emit_time = now;
+                }
+            };
+            emit_verify_prog(true, "", 0);
             std::vector<char> discard_buf(1024 * 1024);
             struct buf_cleaner
             {
@@ -506,6 +542,8 @@ namespace pk::crypto::am_i_evil
                     cleanup_sensitive();
                     return rep;
                 }
+                last_norm_path = norm_path;
+                emit_verify_prog(false, norm_path, i);
                 if (rep.entry_sample.size() < 10)
                 {
                     rep.entry_sample.push_back(norm_path);
@@ -549,6 +587,8 @@ namespace pk::crypto::am_i_evil
                         std::size_t to_drain = static_cast<std::size_t>(std::min<uint64_t>(rem, discard_buf.size()));
                         read_from_stream(discard_buf.data(), to_drain);
                         rem -= to_drain;
+                        vsb += to_drain;
+                        emit_verify_prog(false, norm_path, i);
                     }
                 }
             }
@@ -559,6 +599,8 @@ namespace pk::crypto::am_i_evil
                 fetch_next_chunk();
             }
             rep.total_chunks = chunk_index;
+            vsb = total_origin_size;
+            emit_verify_prog(true, last_norm_path, num_entries);
             if (rep.dub > 0)
             {
                 rep.compression_ratio_percent =
@@ -595,7 +637,7 @@ namespace pk::crypto::am_i_evil
         time(&rawtime);
         timeinfo = localtime(&rawtime);
         strftime(timebuf, sizeof(timebuf), "%d. %B %Y, %H:%M", timeinfo);
-        log << "MAGE archive verification v0.6a (build " << __DATE__ << ")\n";
+        log << "MAGE archive verification v0.7a (build " << __DATE__ << ")\n";
         log << "Verification log file from " << timebuf << "\n\n";
         log << "[!] NOTICE\n";
         log << "    This diagnostic report discloses container geometry, cryptographic parameters,\n";
