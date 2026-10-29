@@ -1,5 +1,5 @@
 // keyfile.cpp
-// last updated: 17/06/2026
+// last updated: 29/10/2026
 #include "../.hpp/keyfile.hpp"
 #include "../.hpp/path_handler.hpp"
 #include <fstream>
@@ -30,19 +30,24 @@ namespace pk::crypto::keyfile
             throw std::runtime_error("failed to generate random data (getrandom failed).");
         }
 #endif
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        std::filesystem::path fs_path = pk::path::from_utf8(path);
+        std::ofstream out(pk::path::to_ext_path(fs_path), std::ios::binary | std::ios::trunc);
         if (!out)
             throw std::runtime_error("failed to create keyfile for writing.");
         out.write(reinterpret_cast<const char *>(buffer.data()), buffer.size());
         out.close();
+        pk::mem_::secure_wipe(buffer.data(), buffer.size());
     }
     pk::mem_::secure_string read(const std::string &path)
     {
         if (!pk::path::ok(pk::path::validate_host_path(path)))
             throw std::runtime_error("invalid path provided for keyfile reading.");
-        if (std::filesystem::file_size(path) != 512)
+        std::filesystem::path fs_path = pk::path::from_utf8(path);
+        std::filesystem::path ext_path = pk::path::to_ext_path(fs_path);
+        std::error_code ec;
+        if (std::filesystem::file_size(ext_path, ec) != 512 || ec)
             throw std::runtime_error("invalid keyfile size; must be exactly 512 bytes.");
-        std::ifstream in(path, std::ios::binary);
+        std::ifstream in(ext_path, std::ios::binary);
         if (!in)
             throw std::runtime_error("failed to open keyfile for reading.");
         pk::mem_::secure_string buffer(512, '\0');
