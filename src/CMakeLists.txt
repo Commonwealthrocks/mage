@@ -1,10 +1,10 @@
 ## CMakeLists.txt
-## last updated: 04/10/2026
+## last updated: 29/10/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
 cmake_minimum_required(VERSION 3.20)
-project(mage_core VERSION 0.6 LANGUAGES CXX)
+project(mage_core VERSION 0.7 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -121,15 +121,6 @@ else()
     if(WIN32)
         get_target_property(QT_QMAKE_LOCATION Qt6::qmake IMPORTED_LOCATION)
         get_filename_component(QT_BIN_DIR "${QT_QMAKE_LOCATION}" DIRECTORY)
-        add_custom_command(TARGET mage POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E env 
-                "PATH=${QT_BIN_DIR};$ENV{PATH}"
-                ${QT_BIN_DIR}/windeployqt.exe
-                --no-translations 
-                "$<TARGET_FILE:mage>"
-            COMMENT "Copying Qt6..."
-            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-        )
     endif()
     find_program(BASH_EXECUTABLE bash PATHS
         "${QT_BIN_DIR}/../../../usr/bin"
@@ -140,8 +131,8 @@ else()
         find_program(BASH_EXECUTABLE bash)
     endif()
     add_custom_command(TARGET mage POST_BUILD
-        COMMAND "${BASH_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/deploy_deps.sh" "$<TARGET_FILE:mage>" "$<TARGET_FILE_DIR:mage>"
-        COMMENT "Copying or Packaging dependencies..."
+        COMMAND "${BASH_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/deploy_deps.sh" "$<TARGET_FILE:mage>" "$<TARGET_FILE_DIR:mage>" "${QT_BIN_DIR}"
+        COMMENT "Deploying dependencies..."
     )
 endif()
 message(STATUS "MAGE v${PROJECT_VERSION} - build type: ${CMAKE_BUILD_TYPE}  static: ${MAGE_STATIC_BUILD}")
