@@ -23,6 +23,8 @@
 #include <QSystemTrayIcon>
 #include <QPointer>
 #include <QMenu>
+#include <QEventLoop>
+#include <QCloseEvent>
 #include "../.hpp/gui_worker.hpp"
 namespace pk::ui::outs
 {
@@ -75,7 +77,7 @@ namespace pk::ui::outs
         QTabWidget *m_tabs = nullptr;
         QList<custom_entropy> m_results;
     };
-    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString());
+    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString(), bool play_sfx = true);
     void warning(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString());
     void error(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString(), const QString &details = QString());
     void show_error(QWidget *parent, const QString &raw_or_formatted_error);
@@ -122,7 +124,8 @@ namespace pk::ui::outs
         explicit cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent = nullptr);
         explicit cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent = nullptr);
         ~cd_prog_dialog() override;
-        void setVisible(bool visible) override;
+        int exec() override;
+        void done(int r) override;
         void reject() override;
         QString what_err_msg() const { return current_err; }
         QList<job_result> results() const { return job_res__; }
@@ -131,9 +134,13 @@ namespace pk::ui::outs
 
     protected:
         void changeEvent(QEvent *event) override;
+        void closeEvent(QCloseEvent *event) override;
     private slots:
         void on_progress(int percentage);
         void on_pr_details(uint64_t processed, uint64_t total);
+        void on_scan_stats(uint64_t files_found, uint64_t bytes_found);
+        void on_file_counts(uint64_t done_files, uint64_t total_files);
+        void on_work_fraction(double fraction);
         void on_success();
         void on_error(const QString &msg);
         void on_update_stats();
@@ -158,9 +165,11 @@ namespace pk::ui::outs
             QString base_out;
             int ext_behavior = 0;
             int ext_overwrite = 0;
+            uint64_t job_weight = 65536ULL;
         };
         void setup_ui(const QString &initial_title);
         void cleanup_tray();
+        void connect_worker(worker::crypto_worker *w);
         QPointer<worker::crypto_worker> m2_worker;
         QList<internal_job> m_jobs;
         QList<job_result> job_res__;
@@ -178,17 +187,33 @@ namespace pk::ui::outs
         QTimer *timer;
         QElapsedTimer elapsed;
         QElapsedTimer phase_elapsed;
+        QElapsedTimer speed_timer;
         uint64_t last_processed;
         uint64_t current_proc;
         uint64_t tot_bytes;
+        uint64_t scan_files_found = 0;
+        uint64_t last_scan_files = 0;
+        uint64_t scan_bytes_found = 0;
+        uint64_t done_files_count = 0;
+        uint64_t total_files_count = 0;
+        uint64_t batch_total_weight = 0;
+        uint64_t batch_done_weight = 0;
+        double ewma_speed = 0.0;
+        double ewma_scan_speed = 0.0;
+        double ewma_eta_ms = -1.0;
+        double phase_work_frac = 0.0;
+        double overall_work_frac = 0.0;
         int current_pct;
-        bool indeterminate;
+        int local_job_pct = 0;
+        bool is_scanning = false;
+        bool is_kdf = false;
         bool _success;
         QString current_err;
         QString current_ac0_text;
         QString current_file_text;
+        QEventLoop *exec_loop = nullptr;
+        bool done_called = false;
         bool __in_bk = false;
-        bool hiding_in_tr = false;
         bool prev_quit_ol = true;
         bool force_taskkill = false;
         QSystemTrayIcon *tr_ico = nullptr;
