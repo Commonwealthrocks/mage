@@ -211,7 +211,10 @@ namespace pk::ui::outs
             setWindowTitle("MAGE");
             setWindowFlags((windowFlags() & ~Qt::WindowContextHelpButtonHint & ~Qt::WindowMaximizeButtonHint) | Qt::MSWindowsFixedSizeDialogHint);
             dont_burn_my_eyes(this);
-            const int dlg_w = 460;
+            QScreen *screen = parent ? parent->screen() : QApplication::primaryScreen();
+            QRect screen_geom = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+            const int dlg_w = 520;
+            const int max_dialog_h = std::clamp(static_cast<int>(screen_geom.height() * 0.65), 320, 520);
             QVBoxLayout *root_layout = new QVBoxLayout(this);
             root_layout->setSpacing(14);
             root_layout->setContentsMargins(18, 18, 18, 16);
@@ -233,28 +236,41 @@ namespace pk::ui::outs
             QVBoxLayout *right_col = new QVBoxLayout();
             right_col->setSpacing(8);
             right_col->setContentsMargins(0, 0, 0, 0);
+            QLabel *lbl_title = nullptr;
             if (!title.trimmed().isEmpty())
             {
-                QLabel *lbl_title = new QLabel(title, this);
+                lbl_title = new QLabel(title, this);
                 lbl_title->setStyleSheet("background: transparent; font-weight: bold; font-size: 11pt; color: #ffffff;");
                 lbl_title->setWordWrap(true);
                 lbl_title->setTextInteractionFlags(Qt::TextSelectableByMouse);
                 right_col->addWidget(lbl_title);
             }
+            QScrollArea *scroll_area = new QScrollArea(this);
+            scroll_area->setWidgetResizable(true);
+            scroll_area->setFrameShape(QFrame::NoFrame);
+            scroll_area->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+            scroll_area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+            scroll_area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+            QWidget *scroll_widget = new QWidget(scroll_area);
+            scroll_widget->setStyleSheet("background: transparent;");
+            QVBoxLayout *scroll_layout = new QVBoxLayout(scroll_widget);
+            scroll_layout->setContentsMargins(0, 0, 6, 0);
+            scroll_layout->setSpacing(8);
+            QLabel *lbl_msg = nullptr;
             if (!message.trimmed().isEmpty())
             {
-                QLabel *lbl_msg = new QLabel(message, this);
-                lbl_msg->setStyleSheet("background: transparent; font-size: 9.5pt; color: #cccccc;");
+                lbl_msg = new QLabel(message, scroll_widget);
+                lbl_msg->setStyleSheet("background: transparent; font-size: 9.5pt; color: #cccccc; line-height: 1.35;");
                 lbl_msg->setWordWrap(true);
                 lbl_msg->setTextInteractionFlags(Qt::TextSelectableByMouse);
-                lbl_msg->setMaximumWidth(dlg_w - 36 - 30 - 14);
-                right_col->addWidget(lbl_msg);
+                scroll_layout->addWidget(lbl_msg);
             }
             QString clean_sug = suggestion.trimmed();
+            QFrame *sug_card = nullptr;
             if (!clean_sug.isEmpty() &&
                 clean_sug != "Check the diagnostic details below for more information.")
             {
-                QFrame *sug_card = new QFrame(this);
+                sug_card = new QFrame(scroll_widget);
                 sug_card->setObjectName("sug_card");
                 sug_card->setStyleSheet(
                     "#sug_card { background-color: #182230; border-left: 3px solid #007acc; border-radius: 0px; padding: 6px 10px; }");
@@ -262,38 +278,34 @@ namespace pk::ui::outs
                 sug_layout->setContentsMargins(4, 3, 4, 3);
                 QLabel *sug_label = new QLabel(clean_sug, sug_card);
                 sug_label->setWordWrap(true);
-                sug_label->setMaximumWidth(dlg_w - 36 - 30 - 14 - 24);
                 sug_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
                 sug_label->setStyleSheet("border: none; background: transparent; color: #9cdcfe; font-size: 9pt;");
                 sug_layout->addWidget(sug_label);
-                right_col->addWidget(sug_card);
+                scroll_layout->addWidget(sug_card);
             }
             QString clean_details = details.trimmed();
+            QPushButton *btn_details = nullptr;
+            QTextEdit *text_details = nullptr;
             if (!clean_details.isEmpty() && clean_details != message.trimmed())
             {
-                QPushButton *btn_details = new QPushButton("Show details", this);
+                btn_details = new QPushButton("Show details", scroll_widget);
                 btn_details->setStyleSheet(
                     "QPushButton { background-color: transparent; border: none; color: #888888; font-size: 9pt; text-align: left; padding: 2px 0; } "
                     "QPushButton:hover { background-color: transparent; border: none; color: #4fc1ff; text-decoration: underline; }");
-                QTextEdit *text_details = new QTextEdit(this);
+                text_details = new QTextEdit(scroll_widget);
                 text_details->setPlainText(clean_details);
                 text_details->setReadOnly(true);
                 text_details->setTextInteractionFlags(Qt::TextSelectableByMouse);
-                text_details->setMaximumHeight(120);
+                text_details->setMaximumHeight(140);
                 text_details->setStyleSheet(
                     "QTextEdit { background-color: #181818; color: #b0b0b0; font-family: 'Consolas', 'Courier New', monospace; "
                     "font-size: 8.5pt; border: 1px solid #444444; border-radius: 0px; padding: 6px; }");
                 text_details->setVisible(false);
-                connect(btn_details, &QPushButton::clicked, this, [btn_details, text_details, this, dlg_w]()
-                        {
-                    bool visible = !text_details->isVisible();
-                    text_details->setVisible(visible);
-                    btn_details->setText(visible ? "Hide details" : "Show details");
-                    this->adjustSize();
-                    this->setFixedSize(dlg_w, this->sizeHint().height()); });
-                right_col->addWidget(btn_details);
-                right_col->addWidget(text_details);
+                scroll_layout->addWidget(btn_details);
+                scroll_layout->addWidget(text_details);
             }
+            scroll_area->setWidget(scroll_widget);
+            right_col->addWidget(scroll_area, 1);
             content_layout->addLayout(right_col, 1);
             root_layout->addLayout(content_layout);
             const QString btn_style = "QPushButton { min-width: 74px; }";
@@ -319,9 +331,54 @@ namespace pk::ui::outs
                 btn_layout->addWidget(btn_ok);
             }
             root_layout->addLayout(btn_layout);
-
-            adjustSize();
-            setFixedSize(dlg_w, sizeHint().height());
+            auto update_dialog_size = [=]()
+            {
+                const int inner_w = dlg_w - 36 - 44 - 10;
+                int content_h = 0;
+                if (lbl_msg)
+                {
+                    content_h += lbl_msg->heightForWidth(inner_w);
+                }
+                if (sug_card)
+                {
+                    content_h += sug_card->sizeHint().height() + 8;
+                }
+                if (btn_details)
+                {
+                    content_h += btn_details->sizeHint().height() + 8;
+                    if (text_details && text_details->isVisible())
+                    {
+                        content_h += text_details->sizeHint().height() + 8;
+                    }
+                }
+                scroll_widget->adjustSize();
+                content_h = std::max(content_h, scroll_widget->sizeHint().height());
+                int title_h = lbl_title ? (lbl_title->sizeHint().height() + 8) : 0;
+                int header_h = std::max(title_h, 30);
+                int footer_h = 32;
+                int overhead = 18 + 16 + 14 + header_h + footer_h;
+                int target_dlg_h = std::clamp(overhead + content_h, 140, max_dialog_h);
+                int available_scroll_h = target_dlg_h - overhead;
+                if (content_h > available_scroll_h)
+                {
+                    scroll_area->setFixedHeight(std::max(available_scroll_h, 60));
+                }
+                else
+                {
+                    scroll_area->setFixedHeight(content_h);
+                }
+                setFixedSize(dlg_w, target_dlg_h);
+            };
+            if (btn_details && text_details)
+            {
+                connect(btn_details, &QPushButton::clicked, this, [=]()
+                        {
+                    bool visible = !text_details->isVisible();
+                    text_details->setVisible(visible);
+                    btn_details->setText(visible ? "Hide details" : "Show details");
+                    update_dialog_size(); });
+            }
+            update_dialog_size();
         }
     };
     void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion, bool play_sfx)
