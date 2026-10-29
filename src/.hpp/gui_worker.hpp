@@ -1,5 +1,5 @@
 // gui_worker.hpp
-// last updated: 28/10/2026
+// last updated: 29/10/2026
 #pragma once
 #include <QThread>
 #include <QString>
@@ -54,6 +54,10 @@ namespace pk::ui::worker
         void pr_details(uint64_t processed, uint64_t total);
         void current_ac0(const QString &action);
         void current_file(const QString &file);
+        void scan_stats(uint64_t files_found, uint64_t bytes_found);
+        void file_counts(uint64_t done_files, uint64_t total_files);
+        void work_fraction(double fraction);
+        void need_fg();
 
     protected:
         void run() override;
