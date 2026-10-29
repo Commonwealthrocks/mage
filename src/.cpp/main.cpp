@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 04/10/2026
+// last updated: 29/10/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -44,7 +44,6 @@ protected:
             auto *wheelEvent = static_cast<QWheelEvent *>(event);
             bool shift = (wheelEvent->modifiers() & Qt::ShiftModifier) || (QApplication::keyboardModifiers() & Qt::ShiftModifier);
             bool right_click = (wheelEvent->buttons() & Qt::RightButton) || (QApplication::mouseButtons() & Qt::RightButton);
-
             QTabBar *tabBar = qobject_cast<QTabBar *>(obj);
             if (!tabBar && obj && obj->parent())
             {
@@ -69,7 +68,6 @@ protected:
                     return true;
                 }
             }
-
             if (qobject_cast<QComboBox *>(obj) ||
                 qobject_cast<QAbstractSpinBox *>(obj) ||
                 qobject_cast<QSlider *>(obj))
@@ -171,10 +169,9 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("MAGE");
-    app.setOrganizationName("MAGE");
-    app.setOrganizationDomain("mage.local");
-    app.setApplicationVersion("v0.6a");
-    // forgot to update this again, ahem...
+    app.setOrganizationName("");
+    app.setOrganizationDomain("");
+    app.setApplicationVersion("v0.7a");
     app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
     QStringList args = app.arguments();
     if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt" || args[1] == "--verify"))
