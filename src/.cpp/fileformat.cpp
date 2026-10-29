@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 28/10/2026
+// last updated: 29/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -52,9 +52,13 @@ namespace pk::crypto::format
         if (p_out.has_parent_path())
         {
             std::error_code ec;
-            std::filesystem::create_directories(p_out.parent_path(), ec);
+            (void)pk::path::mk_dirs_safe(p_out.parent_path(), ec);
         }
+#ifdef _WIN32
+        std::ofstream out(pk::path::to_ext_path(out_path), std::ios::binary | std::ios::trunc);
+#else
         std::ofstream out(out_path.c_str(), std::ios::binary | std::ios::trunc);
+#endif
         if (!out)
             throw std::runtime_error("failed to open output file");
         out.exceptions(std::ios::failbit | std::ios::badbit);
@@ -71,7 +75,7 @@ namespace pk::crypto::format
                     if (f.is_open())
                         f.close();
                     std::error_code ec;
-                    std::filesystem::remove(p, ec);
+                    pk::path::rfs___(p, ec);
                 }
             }
         } file_guard{out_path, op_success, out};
@@ -247,9 +251,13 @@ namespace pk::crypto::format
             }
             if (!entry.is_directory && entry.file_size > 0)
             {
+#ifdef _WIN32
+                std::ifstream in(pk::path::to_ext_path(entry.source_path), std::ios::binary);
+#else
                 std::ifstream in(entry.source_path, std::ios::binary);
+#endif
                 if (!in)
-                    throw std::runtime_error("failed to open input file: " + entry.source_path.string());
+                    throw std::runtime_error("failed to open input file: " + pk::path::to_utf8(entry.source_path));
                 std::vector<char> file_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
                 struct file_buf_guard
                 {
@@ -283,7 +291,7 @@ namespace pk::crypto::format
                 }
                 if (remaining > 0)
                 {
-                    throw std::runtime_error("failed to read complete file: " + entry.source_path.string());
+                    throw std::runtime_error("failed to read complete file: " + pk::path::to_utf8(entry.source_path));
                 }
             }
             completed_entries++;
@@ -317,11 +325,17 @@ namespace pk::crypto::format
         std::function<void(uint64_t, uint64_t)> entry_cb)
     {
         std::error_code ec_out;
-        std::filesystem::create_directories(out_dir, ec_out);
-        if (ec_out)
+        if (!pk::path::mk_dirs_safe(out_dir, ec_out))
             throw std::runtime_error("failed to create destination directory: " + ec_out.message());
-        uint64_t total_bytes = std::filesystem::file_size(in_path);
+        std::error_code ec_in_sz;
+        uint64_t total_bytes = std::filesystem::file_size(pk::path::to_ext_path(in_path), ec_in_sz);
+        if (ec_in_sz)
+            total_bytes = 0;
+#ifdef _WIN32
+        std::ifstream in(pk::path::to_ext_path(in_path), std::ios::binary);
+#else
         std::ifstream in(in_path, std::ios::binary);
+#endif
         if (!in)
             throw std::runtime_error("failed to open input file");
         header_f header{};
@@ -552,7 +566,7 @@ namespace pk::crypto::format
             {
                 throw std::runtime_error("Invalid or malicious path in archive: " + rel_path);
             }
-            auto v_err = pk::path::resolve_out_path(out_dir.string(), norm_path, target_path, fs_error);
+            auto v_err = pk::path::resolve_out_path(out_dir, norm_path, target_path, fs_error);
             if (!pk::path::ok(v_err))
             {
                 if (v_err == pk::path::validation_error::path_conflict)
@@ -567,24 +581,26 @@ namespace pk::crypto::format
                 {
                     throw std::runtime_error("security error -> cannot create directory because a symlink or reparse point exists: " + rel_path);
                 }
-                if (std::filesystem::exists(target_path) && !std::filesystem::is_directory(target_path))
+                if (std::filesystem::exists(pk::path::to_ext_path(target_path)) && !std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
                 {
                     throw std::runtime_error("path conflict -> cannot create directory '" + rel_path + "' because a file with the same name exists.");
                 }
-                std::filesystem::create_directories(target_path);
+                std::error_code ec_mkdir;
+                if (!pk::path::mk_dirs_safe(target_path, ec_mkdir))
+                    throw std::runtime_error("failed to create destination directory: " + ec_mkdir.message());
             }
             else
             {
-                if (std::filesystem::exists(target_path))
+                if (std::filesystem::exists(pk::path::to_ext_path(target_path)))
                 {
-                    if (std::filesystem::is_directory(target_path))
+                    if (std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
                     {
                         throw std::runtime_error("path conflict -> cannot create file '" + rel_path + "' because a directory with the same name exists.");
                     }
                     int action = ext_overwrite;
                     if (action == 0 && overwrite_ask_cb)
                     {
-                        action = overwrite_ask_cb(target_path.string());
+                        action = overwrite_ask_cb(pk::path::to_utf8(target_path));
                     }
                     if (action == 0)
                     {
@@ -611,19 +627,25 @@ namespace pk::crypto::format
                 {
                     throw std::runtime_error("security error -> target file is a symlink or reparse point; " + rel_path);
                 }
-                std::filesystem::create_directories(target_path.parent_path());
+                std::error_code ec_parent;
+                if (!pk::path::mk_dirs_safe(target_path.parent_path(), ec_parent))
+                    throw std::runtime_error("failed to create destination directory: " + ec_parent.message());
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path.parent_path()))
                 {
                     throw std::runtime_error("security error -> parent directory is a symlink or reparse point; " + rel_path);
                 }
+#ifdef _WIN32
+                std::ofstream out(pk::path::to_ext_path(target_path), std::ios::binary | std::ios::trunc);
+#else
                 std::ofstream out(target_path, std::ios::binary | std::ios::trunc);
+#endif
                 if (!out)
-                    throw std::runtime_error("failed to create output file: " + target_path.string());
+                    throw std::runtime_error("failed to create output file: " + pk::path::to_utf8(target_path));
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
                 {
                     out.close();
                     std::error_code ec_rm;
-                    std::filesystem::remove(target_path, ec_rm);
+                    pk::path::rfs___(target_path, ec_rm);
                     throw std::runtime_error("security error -> target file is a symlink or reparse point after open; " + rel_path);
                 }
                 out.exceptions(std::ios::failbit | std::ios::badbit);
@@ -657,7 +679,7 @@ namespace pk::crypto::format
 #ifdef _WIN32
             if (has_meta)
             {
-                std::wstring wpath = target_path.wstring();
+                std::wstring wpath = pk::path::to_ext_win32_path(target_path);
                 HANDLE hFile = CreateFileW(wpath.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, is_dir ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL, NULL);
                 if (hFile != INVALID_HANDLE_VALUE)
                 {
@@ -703,8 +725,54 @@ namespace pk::crypto::format
             std::filesystem::path archive_stem = in_path.stem();
             std::filesystem::path wrapper_dir = out_dir / archive_stem;
             std::error_code ec;
-            if (std::filesystem::exists(wrapper_dir, ec) && std::filesystem::is_directory(wrapper_dir, ec))
+            if (std::filesystem::exists(pk::path::to_ext_path(wrapper_dir), ec) &&
+                std::filesystem::is_directory(pk::path::to_ext_path(wrapper_dir), ec))
             {
+#ifdef _WIN32
+                std::wstring search_pat = pk::path::to_ext_win32_path(wrapper_dir);
+                if (!search_pat.empty() && search_pat.back() != L'\\')
+                    search_pat.push_back(L'\\');
+                search_pat.push_back(L'*');
+                WIN32_FIND_DATAW fdata{};
+                HANDLE hFind = FindFirstFileW(search_pat.c_str(), &fdata);
+                std::size_t child_count = 0;
+                std::wstring single_name;
+                bool single_is_dir = false;
+                if (hFind != INVALID_HANDLE_VALUE)
+                {
+                    do
+                    {
+                        if (fdata.cFileName[0] == L'.' &&
+                            (fdata.cFileName[1] == L'\0' || (fdata.cFileName[1] == L'.' && fdata.cFileName[2] == L'\0')))
+                        {
+                            continue;
+                        }
+                        child_count++;
+                        if (child_count == 1)
+                        {
+                            single_name = fdata.cFileName;
+                            single_is_dir = (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    } while (FindNextFileW(hFind, &fdata));
+                    FindClose(hFind);
+                }
+                if (child_count == 1 && single_is_dir)
+                {
+                    std::filesystem::path single_dir = wrapper_dir / single_name;
+                    std::filesystem::path dest_dir = out_dir / single_name;
+                    if (!std::filesystem::exists(pk::path::to_ext_path(dest_dir), ec))
+                    {
+                        if (MoveFileExW(pk::path::to_ext_win32_path(single_dir).c_str(), pk::path::to_ext_win32_path(dest_dir).c_str(), 0))
+                        {
+                            RemoveDirectoryW(pk::path::to_ext_win32_path(wrapper_dir).c_str());
+                        }
+                    }
+                }
+#else
                 std::vector<std::filesystem::directory_entry> sub_items;
                 for (const auto &dir_entry : std::filesystem::directory_iterator(wrapper_dir, ec))
                 {
@@ -723,6 +791,7 @@ namespace pk::crypto::format
                         }
                     }
                 }
+#endif
             }
         }
         extracted_bytes = total_origin_size;
