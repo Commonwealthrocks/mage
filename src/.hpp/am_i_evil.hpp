@@ -1,5 +1,5 @@
 // am_i_evil.hpp
-// last updated: 04/10/2026
+// last updated: 29/10/2026
 #pragma once
 #include <filesystem>
 #include <string>
@@ -66,7 +66,8 @@ namespace pk::crypto::am_i_evil
         const std::filesystem::path &archive_path,
         std::string_view password,
         std::function<void(uint64_t processed_bytes, uint64_t total_bytes, const std::string &status)> progress_cb = nullptr,
-        std::function<bool()> cancel_cb = nullptr);
+        std::function<bool()> cancel_cb = nullptr,
+        std::function<void(const std::string &current_file, uint64_t done_entries, uint64_t total_entries)> entry_cb = nullptr);
     std::string verdict_to_str(__vv_ v);
     std::string format_bytes(uint64_t bytes);
     std::string numbers_with_commas_unlike_in_gta_5(uint64_t val);
