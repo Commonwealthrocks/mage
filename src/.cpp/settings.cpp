@@ -1,5 +1,5 @@
 // settings.cpp
-// last updated: 03/08/2026
+// last updated: 29/10/2026
 #include "../.hpp/settings.hpp"
 #include <QStandardPaths>
 #include <QDir>
@@ -12,6 +12,38 @@
 #include "../.hpp/logger.hpp"
 namespace pk::cfg
 {
+    static QByteArray get_settings_key()
+    {
+        return QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
+        // ay do not changet his hardcoded key cause the security
+        // would be the same either way and this would js make me
+        // have to re-do my settings; not fun.
+    }
+    static bool decrypt_payload(const QByteArray &payload, const QByteArray &nonce, QJsonObject &out_obj)
+    {
+        if (payload.isEmpty() || nonce.isEmpty())
+            return false;
+        try
+        {
+            QByteArray key = get_settings_key();
+            auto cipher = pk::crypto::cipher::mk_cipher(pk::crypto::cipher::algorithm::xchacha20_poly1305);
+            cipher->init(reinterpret_cast<const uint8_t *>(key.data()), key.size());
+            pk::mem_::secure_vector pt = cipher->decrypt_chunk(
+                reinterpret_cast<const uint8_t *>(payload.data()), payload.size(),
+                nullptr, 0,
+                reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size());
+            QJsonDocument plain_doc = QJsonDocument::fromJson(
+                QByteArray(reinterpret_cast<const char *>(pt.data()), pt.size()));
+            if (!plain_doc.isObject())
+                return false;
+            out_obj = plain_doc.object();
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
     settings &settings::instance()
     {
         static settings s_instance;
@@ -39,61 +71,39 @@ namespace pk::cfg
         def_ext_overwrite_v = 0;
         load();
     }
-    QString settings::settings_path() const
+    QString settings::cfg_dir() const
     {
         QString app_data = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         QDir dir(app_data);
+        if (dir.dirName().compare("MAGE", Qt::CaseInsensitive) == 0)
+        {
+            QDir parent(dir);
+            if (parent.cdUp() && parent.dirName().compare("MAGE", Qt::CaseInsensitive) == 0)
+            {
+                dir = parent;
+            }
+        }
+        if (dir.dirName().compare("MAGE", Qt::CaseInsensitive) != 0)
+        {
+            dir.setPath(QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)).filePath("MAGE"));
+        }
         if (!dir.exists())
         {
             dir.mkpath(".");
         }
-        return dir.filePath("mage.json");
+        return dir.absolutePath();
     }
-    void settings::load()
+    QString settings::settings_path() const
     {
-        QFile file(settings_path());
-        if (!file.open(QIODevice::ReadOnly))
-        {
-            pk::core::logger::log("failed to open mage.json, using defaults.");
-            return;
-        }
-        QJsonDocument root_doc = QJsonDocument::fromJson(file.readAll());
-        if (!root_doc.isObject())
-            return;
-        QJsonObject root_obj = root_doc.object();
-        if (!root_obj.contains("n") || !root_obj.contains("p"))
-            return;
-        QByteArray nonce = QByteArray::fromBase64(root_obj["n"].toString().toUtf8());
-        QByteArray payload = QByteArray::fromBase64(root_obj["p"].toString().toUtf8());
-        pk::core::logger::log("found encrypted settings, loading with XChaCha20-Poly1305.");
-        QByteArray key = QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
-        // though this hardcoded key is to only make sure casual tweaks in the raw
-        // json file don't work; i could make it make a key which is hardware specific
-        // for each device, but for now this'll do! or i use the user windows encryption api
-        // but most of you reading this probably don't have a password on your account, do you?S
-        auto cipher = pk::crypto::cipher::mk_cipher(pk::crypto::cipher::algorithm::xchacha20_poly1305);
-        cipher->init(reinterpret_cast<const uint8_t *>(key.data()), key.size());
-        QJsonObject obj;
-        try
-        {
-            pk::mem_::secure_vector pt = cipher->decrypt_chunk(
-                reinterpret_cast<const uint8_t *>(payload.data()), payload.size(),
-                nullptr, 0,
-                reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size());
-            QJsonDocument plain_doc = QJsonDocument::fromJson(QByteArray(reinterpret_cast<const char *>(pt.data()), pt.size()));
-            if (!plain_doc.isObject())
-            {
-                pk::core::logger::log("decrypted settings contained invalid JSON structure.");
-                return;
-            }
-            obj = plain_doc.object();
-            pk::core::logger::log("settings decrypted and parsed successfully.");
-        }
-        catch (...)
-        {
-            pk::core::logger::log("MAC verification failed for settings; someone tweaked them, using defaults.");
-            return;
-        }
+        return QDir(cfg_dir()).filePath("settings.json");
+    }
+
+    QString settings::magic_path() const
+    {
+        return QDir(cfg_dir()).filePath("magic.json");
+    }
+    void settings::parse_settings_json(const QJsonObject &obj)
+    {
         if (obj.contains("def_output_path"))
         {
             def_output_path_v = obj["def_output_path"].toString();
@@ -101,7 +111,6 @@ namespace pk::cfg
         if (obj.contains("def_ext"))
         {
             QString ext = obj["def_ext"].toString();
-            // validate extensions or paths, even if windows probably can handle this
             if (ext.startsWith('.') && !ext.contains('/') && !ext.contains('\\') && !ext.contains(".."))
             {
                 def_ext__ = ext;
@@ -115,7 +124,6 @@ namespace pk::cfg
         {
             def_ext__ = ".mage";
         }
-        // clamps
         if (obj.contains("mute_sfx"))
             mute_sfx_v = obj["mute_sfx"].toBool();
         if (obj.contains("sfx_volume"))
@@ -149,6 +157,135 @@ namespace pk::cfg
         if (obj.contains("def_ext_overwrite"))
             def_ext_overwrite_v = std::clamp(obj["def_ext_overwrite"].toInt(), 0, 2);
     }
+    void settings::load()
+    {
+        QString base_dir = cfg_dir();
+        QDir dir(base_dir);
+        QString set_file = settings_path();
+        QString mag_file = magic_path();
+        // considering the old setting structure was actual ass
+        // we're doing a simple IF check
+        // IF old_str = true
+        //     mk_new_str
+        // ELSE
+        // keep current
+        // --
+        // --?
+        if (QFile::exists(set_file) && QFile::exists(mag_file))
+        {
+            QFile sf(set_file);
+            QFile mf(mag_file);
+            if (sf.open(QIODevice::ReadOnly) && mf.open(QIODevice::ReadOnly))
+            {
+                QJsonDocument s_doc = QJsonDocument::fromJson(sf.readAll());
+                QJsonDocument m_doc = QJsonDocument::fromJson(mf.readAll());
+                if (s_doc.isObject() && m_doc.isObject())
+                {
+                    QJsonObject s_obj = s_doc.object();
+                    QJsonObject m_obj = m_doc.object();
+                    QString nonce_b64 = m_obj.contains("nonce") ? m_obj["nonce"].toString() : m_obj["n"].toString();
+                    QString payload_b64 = s_obj.contains("payload") ? s_obj["payload"].toString() : s_obj["p"].toString();
+                    QByteArray nonce = QByteArray::fromBase64(nonce_b64.toUtf8());
+                    QByteArray payload = QByteArray::fromBase64(payload_b64.toUtf8());
+                    QJsonObject plain_obj;
+                    if (decrypt_payload(payload, nonce, plain_obj))
+                    {
+                        parse_settings_json(plain_obj);
+                        pk::core::logger::log("settings decrypted and loaded from settings.json and magic.json.");
+                        QString legacy_setting_cfg = dir.filePath("MAGE/mage.json");
+                        if (QFile::exists(legacy_setting_cfg))
+                        {
+                            QFile::remove(legacy_setting_cfg);
+                            dir.rmdir("MAGE");
+                        }
+                        QString legacy_outer = dir.filePath("mage.json");
+                        if (QFile::exists(legacy_outer))
+                        {
+                            QFile::remove(legacy_outer);
+                        }
+                        return;
+                    }
+                    else
+                    {
+                        pk::core::logger::log("MAC verification failed for settings; someone tweaked them, using defaults.");
+                        return;
+                    }
+                }
+            }
+        }
+        QString legacy_setting_cfg = dir.filePath("MAGE/mage.json");
+        if (QFile::exists(legacy_setting_cfg))
+        {
+            QFile nf(legacy_setting_cfg);
+            if (nf.open(QIODevice::ReadOnly))
+            {
+                QJsonDocument n_doc = QJsonDocument::fromJson(nf.readAll());
+                if (n_doc.isObject())
+                {
+                    QJsonObject n_obj = n_doc.object();
+                    if ((n_obj.contains("n") || n_obj.contains("nonce")) &&
+                        (n_obj.contains("p") || n_obj.contains("payload")))
+                    {
+                        QString nonce_b64 = n_obj.contains("nonce") ? n_obj["nonce"].toString() : n_obj["n"].toString();
+                        QString payload_b64 = n_obj.contains("payload") ? n_obj["payload"].toString() : n_obj["p"].toString();
+                        QByteArray nonce = QByteArray::fromBase64(nonce_b64.toUtf8());
+                        QByteArray payload = QByteArray::fromBase64(payload_b64.toUtf8());
+                        QJsonObject plain_obj;
+                        if (decrypt_payload(payload, nonce, plain_obj))
+                        {
+                            parse_settings_json(plain_obj);
+                            pk::core::logger::log("migrated settings from legacy nested MAGE/mage.json.");
+                            nf.close();
+                            save();
+                            return;
+                        }
+                    }
+                }
+                nf.close();
+            }
+        }
+        QString legacy_outer = dir.filePath("mage.json");
+        if (QFile::exists(legacy_outer))
+        {
+            QFile of(legacy_outer);
+            if (of.open(QIODevice::ReadOnly))
+            {
+                QJsonDocument o_doc = QJsonDocument::fromJson(of.readAll());
+                if (o_doc.isObject())
+                {
+                    QJsonObject o_obj = o_doc.object();
+                    if ((o_obj.contains("n") || o_obj.contains("nonce")) &&
+                        (o_obj.contains("p") || o_obj.contains("payload")))
+                    {
+                        QString nonce_b64 = o_obj.contains("nonce") ? o_obj["nonce"].toString() : o_obj["n"].toString();
+                        QString payload_b64 = o_obj.contains("payload") ? o_obj["payload"].toString() : o_obj["p"].toString();
+                        QByteArray nonce = QByteArray::fromBase64(nonce_b64.toUtf8());
+                        QByteArray payload = QByteArray::fromBase64(payload_b64.toUtf8());
+                        QJsonObject plain_obj;
+                        if (decrypt_payload(payload, nonce, plain_obj))
+                        {
+                            parse_settings_json(plain_obj);
+                            pk::core::logger::log("migrated settings from legacy encrypted mage.json.");
+                            of.close();
+                            save();
+                            return;
+                        }
+                    }
+                    else if (o_obj.contains("def_chunk_size") || o_obj.contains("def_cipher") || o_obj.contains("sfx_volume"))
+                    {
+                        parse_settings_json(o_obj);
+                        pk::core::logger::log("migrated settings from legacy unencrypted mage.json.");
+                        of.close();
+                        save();
+                        return;
+                    }
+                }
+                of.close();
+            }
+        }
+        pk::core::logger::log("no existing settings found, creating default settings.json and magic.json.");
+        save();
+    }
     void settings::save() const
     {
         QJsonObject obj;
@@ -175,26 +312,50 @@ namespace pk::cfg
         auto nonce_res = pk::crypto::kdf::mk_salt(24);
         if (!pk::crypto::kdf::ok(nonce_res.second))
             return;
-        QByteArray key = QCryptographicHash::hash(QByteArray("__THISKEYISNOTUSEDFORENCRYPTIONRATHERMAKINGSURESETTINGSCANTGETFUCKEDWITH!!!"), QCryptographicHash::Sha256);
+        QByteArray key = get_settings_key();
         auto cipher = pk::crypto::cipher::mk_cipher(pk::crypto::cipher::algorithm::xchacha20_poly1305);
         cipher->init(reinterpret_cast<const uint8_t *>(key.data()), key.size());
         std::vector<uint8_t> ct = cipher->encrypt_chunk(
             reinterpret_cast<const uint8_t *>(plain_json.data()), plain_json.size(),
             nullptr, 0,
             nonce_res.first.data(), nonce_res.first.size());
-        QJsonObject secure_obj;
-        secure_obj["n"] = QString(QByteArray(reinterpret_cast<const char *>(nonce_res.first.data()), nonce_res.first.size()).toBase64());
-        secure_obj["p"] = QString(QByteArray(reinterpret_cast<const char *>(ct.data()), ct.size()).toBase64());
-        QJsonDocument secure_doc(secure_obj);
-        QFile file(settings_path());
-        if (file.open(QIODevice::WriteOnly))
+        QString nonce_b64 = QString(QByteArray(reinterpret_cast<const char *>(nonce_res.first.data()), nonce_res.first.size()).toBase64());
+        QString payload_b64 = QString(QByteArray(reinterpret_cast<const char *>(ct.data()), ct.size()).toBase64());
+        QJsonObject magic_obj;
+        magic_obj["version"] = 1;
+        magic_obj["nonce"] = nonce_b64;
+        QJsonDocument magic_doc(magic_obj);
+        QFile m_file(magic_path());
+        if (m_file.open(QIODevice::WriteOnly))
         {
-            file.write(secure_doc.toJson());
-            pk::core::logger::log("settings encrypted and saved to disk.");
+            m_file.write(magic_doc.toJson(QJsonDocument::Indented));
+        }
+        QJsonObject settings_obj;
+        settings_obj["version"] = 1;
+        settings_obj["payload"] = payload_b64;
+        QJsonDocument settings_doc(settings_obj);
+
+        QFile s_file(settings_path());
+        if (s_file.open(QIODevice::WriteOnly))
+        {
+            s_file.write(settings_doc.toJson(QJsonDocument::Indented));
+            pk::core::logger::log("settings encrypted and saved to settings.json and magic.json.");
         }
         else
         {
-            pk::core::logger::log("failed to open mage.json for writing.");
+            pk::core::logger::log("failed to open settings.json for writing.");
+        }
+        QDir dir(cfg_dir());
+        QString legacy_setting_cfg = dir.filePath("MAGE/mage.json");
+        if (QFile::exists(legacy_setting_cfg))
+        {
+            QFile::remove(legacy_setting_cfg);
+        }
+        dir.rmdir("MAGE");
+        QString legacy_outer = dir.filePath("mage.json");
+        if (QFile::exists(legacy_outer))
+        {
+            QFile::remove(legacy_outer);
         }
     }
 }
