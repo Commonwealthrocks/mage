@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 28/10/2026
+// last updated: 29/10/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -15,6 +15,7 @@
 #include <fstream>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -83,22 +84,35 @@ namespace pk::ui::worker
         pk::core::logger::log("crypto worker thread started; mode: " + mode_str);
         try
         {
+            constexpr uint64_t ENTRY_IO_WEIGHT = 32768ULL;
+            uint64_t cur_done_entries = 0;
+            uint64_t cur_total_entries = 0;
+            auto entry_cb = [this, &cur_done_entries, &cur_total_entries](uint64_t done_e, uint64_t tot_e)
+            {
+                cur_done_entries = done_e;
+                cur_total_entries = tot_e;
+                emit file_counts(done_e, tot_e);
+            };
             // emit the cc for better progress reporting in the
             // crypto_worker()
-            auto cb = [this](uint64_t processed, uint64_t total, const std::string &cur_file)
+            auto cb = [this, &cur_done_entries, &cur_total_entries, ENTRY_IO_WEIGHT](uint64_t processed, uint64_t total, const std::string &cur_file)
             {
-                if (total > 0)
+                uint64_t w_done = processed + cur_done_entries * ENTRY_IO_WEIGHT;
+                uint64_t w_tot = total + cur_total_entries * ENTRY_IO_WEIGHT;
+                if (w_tot > 0)
                 {
+                    double frac = std::clamp(static_cast<double>(w_done) / static_cast<double>(w_tot), 0.0, 1.0);
                     int p = 0;
                     if (__mode == mode::pack)
                     {
-                        p = std::clamp(50 + static_cast<int>((processed * 50) / total), 50, 100);
+                        p = std::clamp(16 + static_cast<int>(frac * 84.0), 16, 100);
                     }
                     else
                     {
-                        p = std::clamp(static_cast<int>((processed * 100) / total), 0, 100);
+                        p = std::clamp(6 + static_cast<int>(frac * 94.0), 6, 100);
                     }
                     emit progress(p);
+                    emit work_fraction(frac);
                     emit pr_details(processed, total);
                 }
                 if (!cur_file.empty())
@@ -109,7 +123,16 @@ namespace pk::ui::worker
             auto status_cb = [this](const std::string &status)
             {
                 pk::core::logger::log(status);
-                emit current_ac0(QString::fromStdString(status));
+                QString qst = QString::fromStdString(status);
+                emit current_ac0(qst);
+                if (__mode == mode::pack && qst.startsWith("Encrypting", Qt::CaseInsensitive))
+                {
+                    emit progress(16);
+                }
+                else if (__mode == mode::unpack && qst.startsWith("Extracting", Qt::CaseInsensitive))
+                {
+                    emit progress(6);
+                }
             };
             pk::mem_::secure_string final_password;
             if (!keyfile_path.empty())
@@ -147,12 +170,37 @@ namespace pk::ui::worker
                 emit current_ac0("Discovering files...");
                 emit progress(0);
                 std::vector<pk::crypto::format::archive_entry> entries;
+                uint64_t discovered_bytes = 0;
+                int last_scan_p = 0;
                 std::filesystem::path abn___ = std::filesystem::path(output_path).stem();
                 std::error_code ec_out;
                 auto abs_out = std::filesystem::weakly_canonical(output_path, ec_out);
                 auto last_scan_emit_time = std::chrono::steady_clock::now();
+                auto last_pct_step_time = last_scan_emit_time;
                 std::size_t root_idx = 0;
                 const std::size_t total_roots = roots_f_rooted.size();
+                auto emit_scan_tick = [&](const std::string &fname)
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_scan_emit_time).count() >= 50)
+                    {
+                        last_scan_emit_time = now;
+                        const double n_roots = static_cast<double>(std::max<std::size_t>(1, total_roots));
+                        const double log_frac = std::min(1.0, std::log10(1.0 + static_cast<double>(entries.size())) / 6.0);
+                        const double root_frac = static_cast<double>(root_idx) / n_roots;
+                        const double blended = 0.75 * log_frac + 0.25 * root_frac;
+                        int target_p = std::clamp(static_cast<int>(blended * 11.0), 0, 11);
+                        if (target_p > last_scan_p && std::chrono::duration_cast<std::chrono::milliseconds>(now - last_pct_step_time).count() >= 150)
+                        {
+                            last_scan_p++;
+                            last_pct_step_time = now;
+                        }
+                        emit progress(last_scan_p);
+                        emit scan_stats(entries.size(), discovered_bytes);
+                        emit current_ac0(QString("Discovering files... (%1 found)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(entries.size()))));
+                        emit current_file(QString::fromStdString(fname));
+                    }
+                };
                 for (const auto &root_str : roots_f_rooted)
                 {
                     if (isInterruptionRequested())
@@ -160,7 +208,6 @@ namespace pk::ui::worker
                         pk::core::logger::log("scanning interrupted by user.");
                         return;
                     }
-                    std::size_t root_scan_count = 0;
                     std::filesystem::path root_path = root_str;
                     std::error_code ec_root;
                     auto abs_root = std::filesystem::weakly_canonical(root_path, ec_root);
@@ -310,21 +357,9 @@ namespace pk::ui::worker
                                 }
 #endif
                             }
+                            discovered_bytes += ae.file_size;
                             entries.push_back(std::move(ae));
-                            root_scan_count++;
-                            auto now = std::chrono::steady_clock::now();
-                            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_scan_emit_time).count() >= 50)
-                            {
-                                last_scan_emit_time = now;
-                                const double n_roots = static_cast<double>(std::max<std::size_t>(1, total_roots));
-                                const double slice_start = (50.0 * static_cast<double>(root_idx)) / n_roots;
-                                const double slice_span = 50.0 / n_roots;
-                                const double frac = static_cast<double>(root_scan_count) / (static_cast<double>(root_scan_count) + 500.0);
-                                int scan_p = std::clamp(static_cast<int>(slice_start + slice_span * 0.95 * frac), 0, 49);
-                                emit progress(scan_p);
-                                emit current_ac0(QString("Discovering files... (%1 found)").arg(entries.size()));
-                                emit current_file(QString::fromStdString(dir_entry.path().filename().string()));
-                            }
+                            emit_scan_tick(dir_entry.path().filename().string());
                             ++it;
                         }
                     }
@@ -362,17 +397,9 @@ namespace pk::ui::worker
                             }
 #endif
                         }
+                        discovered_bytes += ae.file_size;
                         entries.push_back(std::move(ae));
-                        auto now = std::chrono::steady_clock::now();
-                        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_scan_emit_time).count() >= 50)
-                        {
-                            last_scan_emit_time = now;
-                            const double n_roots = static_cast<double>(std::max<std::size_t>(1, total_roots));
-                            int scan_p = std::clamp(static_cast<int>((50.0 * static_cast<double>(root_idx + 1)) / n_roots), 0, 49);
-                            emit progress(scan_p);
-                            emit current_ac0(QString("Discovering files... (%1 found)").arg(entries.size()));
-                            emit current_file(QString::fromStdString(root_path.filename().string()));
-                        }
+                        emit_scan_tick(root_path.filename().string());
                     }
                     root_idx++;
                 }
@@ -381,39 +408,52 @@ namespace pk::ui::worker
                     pk::core::logger::log("scanning interrupted by user before packing.");
                     return;
                 }
-                emit progress(50);
-                emit current_ac0(QString("Discovered %1 file(s). Initializing encryption...").arg(entries.size()));
+                cur_total_entries = entries.size();
+                emit scan_stats(entries.size(), discovered_bytes);
+                emit file_counts(0, entries.size());
+                emit progress(12);
+                emit current_ac0(QString("Discovered %1 item(s). Deriving encryption key...").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(entries.size()))));
                 emit current_file(" ");
                 pk::crypto::format::pack_archive(entries, output_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb, [this]() -> bool
-                                                 { return isInterruptionRequested(); });
+                                                 { return isInterruptionRequested(); }, entry_cb);
                 pk::core::logger::log("worker successfully packed archive.");
             }
             else if (__mode == mode::unpack)
             {
                 pk::core::logger::log("starting archive unpack...");
-                emit current_ac0("Reading archive...");
+                emit progress(0);
+                emit current_ac0("Deriving encryption key...");
                 int remembered_choice = -1;
                 pk::crypto::format::unpack_archive(
                     in_path, output_dir, final_password, ext_behavior_v, ext_overwrite_v,
-                    [&remembered_choice](const std::string &___filepath) -> int
+                    [this, &remembered_choice](const std::string &___filepath) -> int
                     {
+                        if (isInterruptionRequested())
+                            return 0;
                         if (remembered_choice != -1)
                         {
                             return remembered_choice;
                         }
                         int choice = 0;
                         QMetaObject::invokeMethod(
-                            qApp, [&choice, &remembered_choice, ___filepath]()
+                            qApp, [this, &choice, &remembered_choice, ___filepath]()
                             {
+                                if (isInterruptionRequested())
+                                {
+                                    choice = 0;
+                                    return;
+                                }
+                                emit need_fg();
                                 pk::ui::sfx::play_info();
-                                QMessageBox msgBox;
-                                msgBox.setWindowTitle("File Conflict");
+                                QMessageBox msgBox(QApplication::activeModalWidget());
+                                msgBox.setWindowTitle("File conflict");
                                 msgBox.setText(QString("The file already exists:\n%1\n\nWhat would you like to do?").arg(QString::fromStdString(___filepath)));
                                 QPushButton *btnOver = msgBox.addButton("Overwrite", QMessageBox::ActionRole);
                                 QPushButton *btnOverAll = msgBox.addButton("Overwrite all", QMessageBox::ActionRole);
                                 QPushButton *btnSkip = msgBox.addButton("Skip", QMessageBox::ActionRole);
                                 QPushButton *btnSkipAll = msgBox.addButton("Skip all", QMessageBox::ActionRole);
                                 QPushButton *btnCancel = msgBox.addButton("Cancel", QMessageBox::RejectRole);
+                                pk::ui::outs::dont_burn_my_eyes(&msgBox);
                                 msgBox.exec();
                                 if (msgBox.clickedButton() == btnOver)
                                 {
@@ -440,39 +480,69 @@ namespace pk::ui::worker
                             Qt::BlockingQueuedConnection);
                         return choice;
                     },
-                    cb, []() -> bool
+                    cb, [this]() -> bool
                     {
+                        if (isInterruptionRequested())
+                            return false;
                         bool proceed = false;
                         QMetaObject::invokeMethod(
-                            qApp, [&proceed]()
+                            qApp, [this, &proceed]()
                             { 
+                                if (isInterruptionRequested())
+                                {
+                                    proceed = false;
+                                    return;
+                                }
+                                emit need_fg();
                                 pk::ui::sfx::play_info();
-                                proceed = pk::ui::outs::ask(nullptr, "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
+                                proceed = pk::ui::outs::ask(QApplication::activeModalWidget(), "Zipbomb warning", "Yo this shit possibly a zipbomb, do you want to proceed extracting?"); },
                             Qt::BlockingQueuedConnection);
                         return proceed; }, status_cb, [this]() -> bool
-                    { return isInterruptionRequested(); });
+                    { return isInterruptionRequested(); }, entry_cb);
                 pk::core::logger::log("worker successfully unpacked archive.");
             }
             else if (__mode == mode::am_i_evil)
             {
                 pk::core::logger::log("starting archive verification (am_i_evil)...");
-                emit current_ac0("Verifying archive...");
+                emit progress(0);
+                emit current_ac0("Deriving encryption key...");
                 verify_rep = pk::crypto::am_i_evil::verify_archive(
                     in_path, final_password,
-                    [this](uint64_t processed, uint64_t total, const std::string &status)
+                    [this, &cur_done_entries, &cur_total_entries, ENTRY_IO_WEIGHT](uint64_t processed, uint64_t total, const std::string &status)
                     {
                         QString qstatus = QString::fromStdString(status);
                         emit current_ac0(qstatus);
-                        if (total > 0 && !qstatus.contains("Deriving", Qt::CaseInsensitive))
+                        if (!qstatus.contains("Deriving", Qt::CaseInsensitive))
                         {
-                            int p = std::clamp(static_cast<int>((processed * 100) / total), 0, 100);
-                            emit progress(p);
-                            emit pr_details(processed, total);
+                            uint64_t w_done = processed + cur_done_entries * ENTRY_IO_WEIGHT;
+                            uint64_t w_tot = total + cur_total_entries * ENTRY_IO_WEIGHT;
+                            if (w_tot > 0)
+                            {
+                                double frac = std::clamp(static_cast<double>(w_done) / static_cast<double>(w_tot), 0.0, 1.0);
+                                int p = std::clamp(6 + static_cast<int>(frac * 94.0), 6, 100);
+                                emit progress(p);
+                                emit work_fraction(frac);
+                                emit pr_details(processed, total);
+                            }
+                            else
+                            {
+                                emit progress(6);
+                            }
                         }
                     },
                     [this]() -> bool
                     {
                         return isInterruptionRequested();
+                    },
+                    [this, &cur_done_entries, &cur_total_entries](const std::string &cur_file, uint64_t done_e, uint64_t tot_e)
+                    {
+                        cur_done_entries = done_e;
+                        cur_total_entries = tot_e;
+                        emit file_counts(done_e, tot_e);
+                        if (!cur_file.empty())
+                        {
+                            emit current_file(QString::fromStdString(cur_file));
+                        }
                     });
                 if (verify_rep.verdict != pk::crypto::am_i_evil::__vv_::success)
                 {
