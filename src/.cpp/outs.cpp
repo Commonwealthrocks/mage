@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 28/10/2026
+// last updated: 29/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -208,80 +208,81 @@ namespace pk::ui::outs
             const QString &details = QString())
             : QDialog(parent)
         {
-            setWindowTitle(title);
+            setWindowTitle("MAGE");
             setWindowFlags((windowFlags() & ~Qt::WindowContextHelpButtonHint & ~Qt::WindowMaximizeButtonHint) | Qt::MSWindowsFixedSizeDialogHint);
             dont_burn_my_eyes(this);
-            QVBoxLayout *main_layout = new QVBoxLayout(this);
-            main_layout->setSpacing(12);
-            main_layout->setContentsMargins(18, 18, 18, 14);
-            QHBoxLayout *header_layout = new QHBoxLayout();
-            header_layout->setSpacing(12);
+            const int dlg_w = 460;
+            QVBoxLayout *root_layout = new QVBoxLayout(this);
+            root_layout->setSpacing(14);
+            root_layout->setContentsMargins(18, 18, 18, 16);
+            QHBoxLayout *content_layout = new QHBoxLayout();
+            content_layout->setSpacing(14);
+            content_layout->setContentsMargins(0, 0, 0, 0);
             QLabel *lbl_icon = new QLabel(this);
+            lbl_icon->setStyleSheet("background: transparent;");
             QString icon_name = "warn.svg";
             if (type == msg_type::info)
                 icon_name = "ok.svg";
             else if (type == msg_type::ask)
                 icon_name = "about.svg";
             QIcon icon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/" + icon_name));
-            lbl_icon->setPixmap(icon.pixmap(36, 36));
-            lbl_icon->setFixedSize(36, 36);
-            lbl_icon->setAlignment(Qt::AlignCenter);
-            header_layout->addWidget(lbl_icon, 0, Qt::AlignTop);
-            QLabel *lbl_title = new QLabel(title, this);
-            lbl_title->setStyleSheet("font-weight: bold; font-size: 13pt; color: #ffffff;");
-            lbl_title->setWordWrap(true);
-            header_layout->addWidget(lbl_title, 1, Qt::AlignVCenter);
-            main_layout->addLayout(header_layout);
-            QTextEdit *txt_message = new QTextEdit(this);
-            txt_message->setPlainText(message);
-            txt_message->setReadOnly(true);
-            txt_message->setTextInteractionFlags(Qt::NoTextInteraction);
-            txt_message->setFocusPolicy(Qt::NoFocus);
-            txt_message->viewport()->setCursor(Qt::ArrowCursor);
-            txt_message->setFrameShape(QFrame::NoFrame);
-            txt_message->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            txt_message->setStyleSheet(
-                "QTextEdit { background-color: transparent; color: #e0e0e0; "
-                "font-size: 10pt; border: none; padding: 2px 2px; }"
-                "QScrollBar:vertical { background: #1e1e1e; width: 8px; border-radius: 4px; }"
-                "QScrollBar::handle:vertical { background: #444444; border-radius: 4px; min-height: 20px; }"
-                "QScrollBar::handle:vertical:hover { background: #666666; }"
-                "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }");
-            const int dlg_w = 640;
-            const int inner_w = dlg_w - 36;
-            txt_message->document()->setTextWidth(inner_w);
-            int doc_h = static_cast<int>(std::ceil(txt_message->document()->size().height())) + 6;
-            txt_message->document()->setTextWidth(-1);
-            int target_h = std::clamp(doc_h, 45, 360);
-            txt_message->setFixedHeight(target_h);
-            main_layout->addWidget(txt_message);
-            if (!suggestion.trimmed().isEmpty())
+            lbl_icon->setPixmap(icon.pixmap(30, 30));
+            lbl_icon->setFixedSize(30, 30);
+            lbl_icon->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+            content_layout->addWidget(lbl_icon, 0, Qt::AlignTop);
+            QVBoxLayout *right_col = new QVBoxLayout();
+            right_col->setSpacing(8);
+            right_col->setContentsMargins(0, 0, 0, 0);
+            if (!title.trimmed().isEmpty())
+            {
+                QLabel *lbl_title = new QLabel(title, this);
+                lbl_title->setStyleSheet("background: transparent; font-weight: bold; font-size: 11pt; color: #ffffff;");
+                lbl_title->setWordWrap(true);
+                lbl_title->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                right_col->addWidget(lbl_title);
+            }
+            if (!message.trimmed().isEmpty())
+            {
+                QLabel *lbl_msg = new QLabel(message, this);
+                lbl_msg->setStyleSheet("background: transparent; font-size: 9.5pt; color: #cccccc;");
+                lbl_msg->setWordWrap(true);
+                lbl_msg->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                lbl_msg->setMaximumWidth(dlg_w - 36 - 30 - 14);
+                right_col->addWidget(lbl_msg);
+            }
+            QString clean_sug = suggestion.trimmed();
+            if (!clean_sug.isEmpty() &&
+                clean_sug != "Check the diagnostic details below for more information.")
             {
                 QFrame *sug_card = new QFrame(this);
                 sug_card->setObjectName("sug_card");
-                sug_card->setStyleSheet("#sug_card { background-color: #272727; border-left: 3px solid #007acc; border-radius: 2px; padding: 6px 10px; }");
+                sug_card->setStyleSheet(
+                    "#sug_card { background-color: #182230; border-left: 3px solid #007acc; border-radius: 0px; padding: 6px 10px; }");
                 QVBoxLayout *sug_layout = new QVBoxLayout(sug_card);
-                sug_layout->setContentsMargins(6, 4, 6, 4);
-                sug_layout->setSpacing(2);
-                QLabel *sug_label = new QLabel(suggestion, sug_card);
+                sug_layout->setContentsMargins(4, 3, 4, 3);
+                QLabel *sug_label = new QLabel(clean_sug, sug_card);
                 sug_label->setWordWrap(true);
-                sug_label->setTextInteractionFlags(Qt::NoTextInteraction);
-                sug_label->setFocusPolicy(Qt::NoFocus);
-                sug_label->setStyleSheet("border: none; background: transparent; color: #b0c4de; font-size: 9.5pt;");
+                sug_label->setMaximumWidth(dlg_w - 36 - 30 - 14 - 24);
+                sug_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                sug_label->setStyleSheet("border: none; background: transparent; color: #9cdcfe; font-size: 9pt;");
                 sug_layout->addWidget(sug_label);
-                main_layout->addWidget(sug_card);
+                right_col->addWidget(sug_card);
             }
-            if (!details.trimmed().isEmpty() && details.trimmed() != message.trimmed())
+            QString clean_details = details.trimmed();
+            if (!clean_details.isEmpty() && clean_details != message.trimmed())
             {
                 QPushButton *btn_details = new QPushButton("Show details", this);
-                btn_details->setStyleSheet("QPushButton { background-color: transparent; border: none; color: #888888; font-size: 9pt; text-align: left; padding: 2px 0; } QPushButton:hover { color: #007acc; text-decoration: underline; }");
+                btn_details->setStyleSheet(
+                    "QPushButton { background-color: transparent; border: none; color: #888888; font-size: 9pt; text-align: left; padding: 2px 0; } "
+                    "QPushButton:hover { background-color: transparent; border: none; color: #4fc1ff; text-decoration: underline; }");
                 QTextEdit *text_details = new QTextEdit(this);
-                text_details->setPlainText(details);
+                text_details->setPlainText(clean_details);
                 text_details->setReadOnly(true);
-                text_details->setTextInteractionFlags(Qt::NoTextInteraction);
-                text_details->setFocusPolicy(Qt::NoFocus);
-                text_details->setMaximumHeight(130);
-                text_details->setStyleSheet("QTextEdit { background-color: #1a1a1a; color: #aaaaaa; font-family: 'Consolas', 'Courier New', monospace; font-size: 8.5pt; border: 1px solid #444444; border-radius: 2px; padding: 4px; }");
+                text_details->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                text_details->setMaximumHeight(120);
+                text_details->setStyleSheet(
+                    "QTextEdit { background-color: #181818; color: #b0b0b0; font-family: 'Consolas', 'Courier New', monospace; "
+                    "font-size: 8.5pt; border: 1px solid #444444; border-radius: 0px; padding: 6px; }");
                 text_details->setVisible(false);
                 connect(btn_details, &QPushButton::clicked, this, [btn_details, text_details, this, dlg_w]()
                         {
@@ -290,15 +291,20 @@ namespace pk::ui::outs
                     btn_details->setText(visible ? "Hide details" : "Show details");
                     this->adjustSize();
                     this->setFixedSize(dlg_w, this->sizeHint().height()); });
-                main_layout->addWidget(btn_details);
-                main_layout->addWidget(text_details);
+                right_col->addWidget(btn_details);
+                right_col->addWidget(text_details);
             }
+            content_layout->addLayout(right_col, 1);
+            root_layout->addLayout(content_layout);
+            const QString btn_style = "QPushButton { min-width: 74px; }";
             QHBoxLayout *btn_layout = new QHBoxLayout();
             btn_layout->addStretch();
             if (type == msg_type::ask)
             {
                 QPushButton *btn_yes = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " Yes", this);
                 QPushButton *btn_no = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/cancel.svg")), " No", this);
+                btn_yes->setStyleSheet(btn_style);
+                btn_no->setStyleSheet(btn_style);
                 connect(btn_yes, &QPushButton::clicked, this, &QDialog::accept);
                 connect(btn_no, &QPushButton::clicked, this, &QDialog::reject);
                 btn_layout->addWidget(btn_yes);
@@ -307,11 +313,13 @@ namespace pk::ui::outs
             else
             {
                 QPushButton *btn_ok = new QPushButton(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/ok.svg")), " OK", this);
+                btn_ok->setStyleSheet(btn_style);
                 btn_ok->setDefault(true);
                 connect(btn_ok, &QPushButton::clicked, this, &QDialog::accept);
                 btn_layout->addWidget(btn_ok);
             }
-            main_layout->addLayout(btn_layout);
+            root_layout->addLayout(btn_layout);
+
             adjustSize();
             setFixedSize(dlg_w, sizeHint().height());
         }
@@ -876,9 +884,10 @@ namespace pk::ui::outs
                 }
             }
             m2_worker = nullptr;
-            if (!partial_out.isEmpty() && QFileInfo::exists(partial_out))
+            if (!partial_out.isEmpty())
             {
-                QFile::remove(partial_out);
+                std::error_code ec_fk;
+                (void)pk::path::rfs___(pk::path::from_utf8(partial_out.toUtf8().toStdString()), ec_fk);
             }
         }
         if (bm)
@@ -1319,7 +1328,7 @@ namespace pk::ui::outs
     {
         QString path = QFileDialog::getSaveFileName(this, "Save keyfile", "keyfile.mgkx", "MAGE keyfiles (*.mgkx)");
         if (!path.isEmpty())
-            path_input->setText(path);
+            path_input->setText(QDir::toNativeSeparators(path));
     }
     void cd_keyfile::on_generate()
     {
@@ -1330,8 +1339,10 @@ namespace pk::ui::outs
         }
         try
         {
-            pk::crypto::keyfile::generate(path_input->text().toStdString());
-            gen_path_ = path_input->text();
+            QString kf_out = QDir::toNativeSeparators(path_input->text().trimmed());
+            path_input->setText(kf_out);
+            pk::crypto::keyfile::generate(kf_out.toUtf8().toStdString());
+            gen_path_ = kf_out;
             info(this, "Keyfile generated", "Keyfile successfully generated.");
             accept();
         }
@@ -1365,6 +1376,7 @@ namespace pk::ui::outs
         QString canonical = QFileInfo(path).canonicalFilePath();
         if (canonical.isEmpty())
             canonical = QDir::cleanPath(path);
+        canonical = QDir::toNativeSeparators(canonical);
         for (int i = 0; i < file_list->count(); ++i)
         {
             if (file_list->item(i)->text() == canonical)
@@ -1380,7 +1392,8 @@ namespace pk::ui::outs
         QFormLayout *out_layout = new QFormLayout(group_out);
         QHBoxLayout *dir_layout = new QHBoxLayout();
         output_dir = new QLineEdit(this);
-        output_dir->setText(pk::cfg::settings::instance().def_output_path());
+        QString init_out = pk::cfg::settings::instance().def_output_path();
+        output_dir->setText(init_out == "." ? init_out : QDir::toNativeSeparators(init_out));
         output_dir->setContextMenuPolicy(Qt::NoContextMenu);
         QPushButton *btn_browse_out = new QPushButton("Browse", this);
         dir_layout->addWidget(output_dir);
@@ -1580,12 +1593,12 @@ namespace pk::ui::outs
         connect(btn_browse_keyfile, &QPushButton::clicked, this, [this]()
                 {
             QString path = QFileDialog::getOpenFileName(this, "Select keyfile", "", "MAGE keyfiles (*.mgkx);;All files (*)");
-            if (!path.isEmpty()) keyfile_path_v->setText(path); });
+            if (!path.isEmpty()) keyfile_path_v->setText(QDir::toNativeSeparators(path)); });
         connect(btn_generate_keyfile, &QPushButton::clicked, this, [this]()
                 {
             cd_keyfile dlg(this);
             if (dlg.exec() == QDialog::Accepted) {
-                keyfile_path_v->setText(dlg.what_gen_path());
+                keyfile_path_v->setText(QDir::toNativeSeparators(dlg.what_gen_path()));
             } });
         QHBoxLayout *action_layout = new QHBoxLayout();
         action_layout->addStretch();
@@ -1629,7 +1642,7 @@ namespace pk::ui::outs
         {
             QStringList dirs = dialog.selectedFiles();
             if (!dirs.isEmpty())
-                output_dir->setText(dirs.first());
+                output_dir->setText(QDir::toNativeSeparators(dirs.first()));
         }
     }
     void cd_mk_archive::on_add_files()
@@ -1667,7 +1680,7 @@ namespace pk::ui::outs
         if (output_dir->text() == ".")
         {
             QFileInfo fi(path);
-            output_dir->setText(fi.absolutePath());
+            output_dir->setText(QDir::toNativeSeparators(fi.absolutePath()));
         }
     }
     void cd_mk_archive::on_rm_selected()
@@ -1685,11 +1698,21 @@ namespace pk::ui::outs
             warning(this, "Missing output path", "Archive output directory or name is empty.", "Specify both a destination folder and an archive name.");
             return;
         }
-        QString resolved_out = output_dir->text();
+        QString resolved_out = output_dir->text().trimmed();
         if (resolved_out == "." && file_list->count() > 0)
         {
             QFileInfo fi(file_list->item(0)->text());
-            resolved_out = fi.absolutePath();
+            resolved_out = QDir::toNativeSeparators(fi.absolutePath());
+            output_dir->setText(resolved_out);
+        }
+        else if (resolved_out == ".")
+        {
+            resolved_out = QDir::toNativeSeparators(QDir::currentPath());
+            output_dir->setText(resolved_out);
+        }
+        else
+        {
+            resolved_out = QDir::toNativeSeparators(QDir::cleanPath(resolved_out));
             output_dir->setText(resolved_out);
         }
         QString err_msg;
@@ -1698,7 +1721,9 @@ namespace pk::ui::outs
             warning(this, "Invalid destination path", err_msg);
             return;
         }
-        if (!QFileInfo::exists(resolved_out) || !QFileInfo(resolved_out).isDir())
+        std::error_code ec_out_dir;
+        auto out_dir_fs = pk::path::to_ext_path(pk::path::from_utf8(resolved_out.toUtf8().toStdString()));
+        if (!std::filesystem::exists(out_dir_fs, ec_out_dir) || !std::filesystem::is_directory(out_dir_fs, ec_out_dir))
         {
             warning(this, "Output directory not found", "Output directory does not exist: " + resolved_out, "Choose an existing directory for the archive.");
             return;
@@ -1762,7 +1787,7 @@ namespace pk::ui::outs
         }
         worker->ss_def_pk_params(
             roots,
-            output_dir->text() + "/" + output_name->text(),
+            QDir::toNativeSeparators(QDir(resolved_out).filePath(output_name->text())),
             password_v->text(),
             keyfile_path_v->text(),
             algo,
@@ -2003,7 +2028,7 @@ namespace pk::ui::outs
                 {
             QString f = QFileDialog::getOpenFileName(this, "Select custom keyfile", "", "MAGE keyfiles (*.mgkx);; All files (*.*)");
             if (!f.isEmpty())
-                kf_ptr->setText(f); });
+                kf_ptr->setText(QDir::toNativeSeparators(f)); });
         connect(ui_ref.btn_clear_kf, &QPushButton::clicked, page, [kf_ptr]()
                 { kf_ptr->clear(); });
         kf_row->addWidget(ui_ref.txt_kf);
@@ -2116,6 +2141,7 @@ namespace pk::ui::outs
         QString canonical = QFileInfo(path).canonicalFilePath();
         if (canonical.isEmpty())
             canonical = QDir::cleanPath(path);
+        canonical = QDir::toNativeSeparators(canonical);
         for (int i = 0; i < archive_list->count(); ++i)
         {
             QString item_path = archive_list->item(i)->toolTip().isEmpty() ? archive_list->item(i)->text() : archive_list->item(i)->toolTip();
@@ -2151,7 +2177,8 @@ namespace pk::ui::outs
         QFormLayout *form = new QFormLayout();
         QHBoxLayout *out_layout = new QHBoxLayout();
         output_dir_ = new QLineEdit(this);
-        output_dir_->setText(pk::cfg::settings::instance().def_output_path());
+        QString init_dec_out = pk::cfg::settings::instance().def_output_path();
+        output_dir_->setText(init_dec_out == "." ? init_dec_out : QDir::toNativeSeparators(init_dec_out));
         output_dir_->setContextMenuPolicy(Qt::NoContextMenu);
         QPushButton *btn_browse_out = new QPushButton("Browse", this);
         out_layout->addWidget(output_dir_);
@@ -2200,7 +2227,7 @@ namespace pk::ui::outs
         connect(btn_browse_keyfile, &QPushButton::clicked, this, [this]()
                 {
             QString path = QFileDialog::getOpenFileName(this, "Select keyfile", "", "MAGE keyfiles (*.mgkx) ;; All files (*)");
-            if (!path.isEmpty()) keyfile_path_v->setText(path); });
+            if (!path.isEmpty()) keyfile_path_v->setText(QDir::toNativeSeparators(path)); });
 
         QString tooltips_path = QCoreApplication::applicationDirPath() + "/assets/txt_data/tooltips";
         QMap<QString, QString> tooltips = parse_tooltips(tooltips_path);
@@ -2258,7 +2285,7 @@ namespace pk::ui::outs
         if (current.isEmpty() || current == ".")
         {
             QFileInfo fi(path);
-            output_dir_->setText(fi.absolutePath());
+            output_dir_->setText(QDir::toNativeSeparators(fi.absolutePath()));
         }
     }
     void cd_decrypt_archive::on_add_files()
@@ -2431,7 +2458,7 @@ namespace pk::ui::outs
         {
             QStringList dirs = dialog.selectedFiles();
             if (!dirs.isEmpty())
-                output_dir_->setText(dirs.first());
+                output_dir_->setText(QDir::toNativeSeparators(dirs.first()));
         }
     }
     void cd_decrypt_archive::on_decrypt()
@@ -2465,8 +2492,32 @@ namespace pk::ui::outs
                 return;
             }
         }
-        QString base_out = output_dir_->text();
-        if (!QFileInfo::exists(base_out) || !QFileInfo(base_out).isDir())
+        QString base_out = output_dir_->text().trimmed();
+        if (base_out == "." && archive_list->count() > 0)
+        {
+            QString first_p = archive_list->item(0)->toolTip().isEmpty() ? archive_list->item(0)->text() : archive_list->item(0)->toolTip();
+            base_out = QDir::toNativeSeparators(QFileInfo(first_p).absolutePath());
+            output_dir_->setText(base_out);
+        }
+        else if (base_out == ".")
+        {
+            base_out = QDir::toNativeSeparators(QDir::currentPath());
+            output_dir_->setText(base_out);
+        }
+        else
+        {
+            base_out = QDir::toNativeSeparators(QDir::cleanPath(base_out));
+            output_dir_->setText(base_out);
+        }
+        QString err_msg;
+        if (!pk::ui::outs::valid_path_probable(base_out, &err_msg))
+        {
+            warning(this, "Invalid destination path", err_msg);
+            return;
+        }
+        std::error_code ec_base_out;
+        auto base_out_fs = pk::path::to_ext_path(pk::path::from_utf8(base_out.toUtf8().toStdString()));
+        if (!std::filesystem::exists(base_out_fs, ec_base_out) || !std::filesystem::is_directory(base_out_fs, ec_base_out))
         {
             warning(this, "Output directory missing", "The output directory does not exist:\n" + base_out);
             return;
@@ -2685,7 +2736,7 @@ namespace pk::ui::outs
         existing_paths.reserve(m_reports.size() + paths.size());
         for (const auto &rep : m_reports)
         {
-            existing_paths.insert(rep.header.___filepath.string());
+            existing_paths.insert(pk::path::to_utf8(rep.header.___filepath));
         }
         QList<QTreeWidgetItem *> new_items;
         new_items.reserve(paths.size());
@@ -2698,12 +2749,13 @@ namespace pk::ui::outs
             QString canonical = QFileInfo(path).canonicalFilePath();
             if (canonical.isEmpty())
                 canonical = QDir::cleanPath(path);
-            std::string canon_std = canonical.toStdString();
+            canonical = QDir::toNativeSeparators(canonical);
+            std::string canon_std = canonical.toUtf8().toStdString();
             if (existing_paths.find(canon_std) != existing_paths.end())
                 continue;
             existing_paths.insert(canon_std);
             pk::crypto::am_i_evil::verification_report rep;
-            rep.header = pk::crypto::am_i_evil::view_header(canon_std);
+            rep.header = pk::crypto::am_i_evil::view_header(pk::path::from_utf8(canon_std));
             rep.total_chunks = rep.header.est_chunks;
             rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
             m_reports.push_back(rep);
@@ -2928,7 +2980,7 @@ namespace pk::ui::outs
                 {
             QString f = QFileDialog::getOpenFileName(this, "Select keyfile", "", "All files (*.*)");
             if (!f.isEmpty())
-                keyfile_path_v->setText(f); });
+                keyfile_path_v->setText(QDir::toNativeSeparators(f)); });
         connect(btn_clear_keyfile, &QPushButton::clicked, this, [this]()
                 { keyfile_path_v->clear(); });
         connect(btn_export, &QPushButton::clicked, this, &cd_am_i_evil::on_export_log);
@@ -2963,7 +3015,7 @@ namespace pk::ui::outs
         {
             if (r >= 0 && r < static_cast<int>(m_reports.size()))
             {
-                QString p = QString::fromStdString(m_reports[r].header.___filepath.string());
+                QString p = QString::fromStdString(pk::path::to_utf8(m_reports[r].header.___filepath));
                 if (__custom_entropy_.contains(p))
                 {
                     __custom_entropy_[p].wipe();
@@ -3179,7 +3231,7 @@ namespace pk::ui::outs
             return;
         }
         const auto &rep = m_reports[row];
-        txt_current_path->setText(QString::fromStdString(rep.header.___filepath.string()));
+        txt_current_path->setText(QString::fromStdString(pk::path::to_utf8(rep.header.___filepath)));
         pt->clear();
         auto add_category = [this](const QString &title) -> QTreeWidgetItem *
         {
@@ -3217,7 +3269,7 @@ namespace pk::ui::outs
         add_prop(cat_crypto, "Argon2id memory cost", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024)) : "-");
         add_prop(cat_crypto, "Argon2id time cost", rep.header.valid_magic ? QString("%1 pass(es)").arg(rep.header.time_cost) : "-");
         add_prop(cat_crypto, "Argon2id parallelism", rep.header.valid_magic ? QString("%1 thread(s)").arg(rep.header.parallelism) : "-");
-        QString p = QString::fromStdString(rep.header.___filepath.string());
+        QString p = QString::fromStdString(pk::path::to_utf8(rep.header.___filepath));
         if (__custom_entropy_.contains(p) && __custom_entropy_[p].has_any())
         {
             const auto &ce = __custom_entropy_[p];
@@ -3360,7 +3412,7 @@ namespace pk::ui::outs
             bool all_have_custom = true;
             for (const auto &rep : m_reports)
             {
-                QString p = QString::fromStdString(rep.header.___filepath.string());
+                QString p = QString::fromStdString(pk::path::to_utf8(rep.header.___filepath));
                 if (!__custom_entropy_.contains(p) || !__custom_entropy_[p].has_any())
                 {
                     all_have_custom = false;
@@ -3381,7 +3433,7 @@ namespace pk::ui::outs
         for (int i = 0; i < static_cast<int>(m_reports.size()); ++i)
         {
             auto &rep = m_reports[i];
-            QString archive_path = QString::fromStdString(rep.header.___filepath.string());
+            QString archive_path = QString::fromStdString(pk::path::to_utf8(rep.header.___filepath));
             QString base_name = QFileInfo(archive_path).fileName();
             QString eff_pwd = password_v->text();
             QString eff_kf = keyfile_path_v->text();
@@ -3609,7 +3661,8 @@ namespace pk::ui::outs
         QFormLayout *form_out = new QFormLayout();
         def_output = new QLineEdit(this);
         def_output->setContextMenuPolicy(Qt::NoContextMenu);
-        def_output->setText(pk::cfg::settings::instance().def_output_path());
+        QString init_def_out = pk::cfg::settings::instance().def_output_path();
+        def_output->setText(init_def_out == "." ? init_def_out : QDir::toNativeSeparators(init_def_out));
         form_out->addRow("Default output PATH:", def_output);
         def_ext__ = new QLineEdit(this);
         def_ext__->setContextMenuPolicy(Qt::NoContextMenu);
@@ -3899,7 +3952,12 @@ namespace pk::ui::outs
     }
     void cd_settings::on_save()
     {
-        QString def_out = def_output->text();
+        QString def_out = def_output->text().trimmed();
+        if (!def_out.isEmpty() && def_out != ".")
+        {
+            def_out = QDir::toNativeSeparators(QDir::cleanPath(def_out));
+            def_output->setText(def_out);
+        }
         QString err_msg;
         if (!pk::ui::outs::valid_path_probable(def_out, &err_msg))
         {
