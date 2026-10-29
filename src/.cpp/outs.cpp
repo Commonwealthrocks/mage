@@ -316,9 +316,10 @@ namespace pk::ui::outs
             setFixedSize(dlg_w, sizeHint().height());
         }
     };
-    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion)
+    void info(QWidget *parent, const QString &title, const QString &message, const QString &suggestion, bool play_sfx)
     {
-        pk::ui::sfx::play_info();
+        if (play_sfx)
+            pk::ui::sfx::play_info();
         custom_msg_dialog dlg(title, message, msg_type::info, parent, suggestion);
         dlg.exec();
     }
@@ -368,9 +369,10 @@ namespace pk::ui::outs
         lbl_file->setStyleSheet("font-size: 9pt; color: #888888;");
         layout->addWidget(lbl_file);
         progress___ = new QProgressBar(this);
-        progress___->setRange(0, 0);
+        progress___->setRange(0, 100);
+        progress___->setValue(0);
         progress___->setTextVisible(true);
-        progress___->setFormat("Waiting...");
+        progress___->setFormat("0%");
         progress___->setFixedHeight(22);
         layout->addWidget(progress___);
         QFrame *sep = new QFrame(this);
@@ -392,7 +394,7 @@ namespace pk::ui::outs
         lbl_proc = new QLabel("-", this);
         lbl_sped = new QLabel("-", this);
         lbl_elapsed = new QLabel("00:00:00", this);
-        lbl_eta = new QLabel("-", this);
+        lbl_eta = new QLabel("Calculating...", this);
         lbl_file_count = new QLabel("-", this);
         int row = 0;
         stats_layout->addWidget(make_hdr("Processed:"), row, 0);
@@ -424,43 +426,73 @@ namespace pk::ui::outs
         connect(timer, &QTimer::timeout, this, &cd_prog_dialog::on_update_stats);
         timer->start(500);
         elapsed.start();
+        speed_timer.start();
+    }
+    void cd_prog_dialog::connect_worker(worker::crypto_worker *w)
+    {
+        if (!w)
+            return;
+        connect(w, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
+        connect(w, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
+        connect(w, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
+        connect(w, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
+        connect(w, &worker::crypto_worker::scan_stats, this, &cd_prog_dialog::on_scan_stats);
+        connect(w, &worker::crypto_worker::file_counts, this, &cd_prog_dialog::on_file_counts);
+        connect(w, &worker::crypto_worker::work_fraction, this, &cd_prog_dialog::on_work_fraction);
+        connect(w, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
+        connect(w, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
+        connect(w, &worker::crypto_worker::need_fg, this, &cd_prog_dialog::restore_from_tray);
+        connect(w, &QThread::finished, w, &QObject::deleteLater);
     }
     cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent)
         : QDialog(parent), m2_worker(worker), curr_job_idx(0), bm(false), is_cancelled(false),
-          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
     {
-        QString base_title = (m2_worker && m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? "Creating archive" : "Decrypting archive";
+        QString base_title = "Creating archive";
+        if (m2_worker)
+        {
+            if (m2_worker->what_mode() == worker::crypto_worker::mode::unpack)
+                base_title = "Decrypting archive";
+            else if (m2_worker->what_mode() == worker::crypto_worker::mode::am_i_evil)
+                base_title = "Verifying archive";
+        }
         setup_ui(base_title + " - 0%");
         if (m2_worker)
         {
-            connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
-            connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
-            connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
-            connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
-            connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
-            connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
-            connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
+            if (m2_worker->what_mode() == worker::crypto_worker::mode::pack)
+                is_scanning = true;
+            else
+                is_kdf = true;
+            connect_worker(m2_worker);
             m2_worker->start();
         }
     }
     cd_prog_dialog::cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent)
         : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
-          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
     {
+        batch_total_weight = 0;
         for (const auto &j : jobs)
         {
-            m_jobs.append({worker::crypto_worker::mode::unpack, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, j.base_out, j.ext_behavior, j.ext_overwrite});
+            uint64_t disk_sz = static_cast<uint64_t>(std::max<qint64>(0, QFileInfo(j.archive_path).size()));
+            uint64_t w = std::max<uint64_t>(65536ULL, disk_sz);
+            batch_total_weight += w;
+            m_jobs.append({worker::crypto_worker::mode::unpack, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, j.base_out, j.ext_behavior, j.ext_overwrite, w});
         }
         setup_ui("Decrypting archive - 0%");
         QTimer::singleShot(0, this, &cd_prog_dialog::start_next_job);
     }
     cd_prog_dialog::cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent)
         : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
-          _success(false), last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), indeterminate(true)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
     {
+        batch_total_weight = 0;
         for (const auto &j : jobs)
         {
-            m_jobs.append({worker::crypto_worker::mode::am_i_evil, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, "", 0, 0});
+            uint64_t disk_sz = static_cast<uint64_t>(std::max<qint64>(0, QFileInfo(j.archive_path).size()));
+            uint64_t w = std::max<uint64_t>(65536ULL, disk_sz);
+            batch_total_weight += w;
+            m_jobs.append({worker::crypto_worker::mode::am_i_evil, j.list_index, j.archive_path, j.display_name, j.password, j.keyfile, "", 0, 0, w});
         }
         setup_ui("Verifying archive - 0%");
         QTimer::singleShot(0, this, &cd_prog_dialog::start_next_job);
@@ -496,14 +528,38 @@ namespace pk::ui::outs
             m2_worker->wait(500);
         }
     }
-    void cd_prog_dialog::setVisible(bool visible)
+    int cd_prog_dialog::exec()
     {
-        if (!visible && hiding_in_tr)
+        if (done_called)
+            return result();
+        setResult(QDialog::Rejected);
+        setModal(true);
+        show();
+        dont_burn_my_eyes(this);
+        QEventLoop loop;
+        exec_loop = &loop;
+        connect(qApp, &QCoreApplication::aboutToQuit, &loop, &QEventLoop::quit);
+        if (!done_called)
+            loop.exec(QEventLoop::DialogExec);
+        exec_loop = nullptr;
+        return result();
+    }
+    void cd_prog_dialog::done(int r)
+    {
+        done_called = true;
+        QDialog::done(r);
+        if (exec_loop && exec_loop->isRunning())
+            exec_loop->exit(r);
+    }
+    void cd_prog_dialog::closeEvent(QCloseEvent *event)
+    {
+        if (done_called)
         {
-            QWidget::setVisible(false);
+            QDialog::closeEvent(event);
             return;
         }
-        QDialog::setVisible(visible);
+        event->ignore();
+        reject();
     }
     void cd_prog_dialog::cleanup_tray()
     {
@@ -546,22 +602,21 @@ namespace pk::ui::outs
                 reject();
                 return;
             }
-            bool any_succeeded = false;
+            current_pct = 100;
+            progress___->setValue(100);
+            progress___->setFormat("100%");
+            bool all_succeeded = !job_res__.isEmpty();
             for (const auto &res : job_res__)
             {
-                if (res.success)
+                if (!res.success)
                 {
-                    any_succeeded = true;
+                    all_succeeded = false;
                     break;
                 }
             }
-            if (any_succeeded)
+            if (all_succeeded)
             {
                 pk::ui::sfx::play_success();
-            }
-            else
-            {
-                pk::ui::sfx::play_error();
             }
             if (__in_bk)
             {
@@ -576,22 +631,22 @@ namespace pk::ui::outs
         last_processed = 0;
         current_proc = 0;
         tot_bytes = 0;
-        current_pct = 0;
-        indeterminate = true;
+        done_files_count = 0;
+        total_files_count = 0;
+        local_job_pct = 0;
+        phase_work_frac = 0.0;
         phase_elapsed.invalidate();
+        is_scanning = false;
+        is_kdf = true;
         current_file_text.clear();
         current_ac0_text.clear();
-        progress___->setRange(0, 0);
-        progress___->setFormat("Waiting...");
         lbl_file->setText(" ");
-        lbl_proc->setText("-");
-        lbl_sped->setText("-");
-        lbl_eta->setText("-");
-        lbl_file_count->setText(QString("%1 of %2").arg(std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()))).arg(m_jobs.size()));
-        elapsed.restart();
+        lbl_file_count->setText(m_jobs.size() > 1
+                                    ? QString("Archive %1 of %2").arg(curr_job_idx + 1).arg(m_jobs.size())
+                                    : QString("1 of 1"));
         QString action_verb = (job.mode == worker::crypto_worker::mode::am_i_evil) ? "Verifying archive" : "Decrypting archive";
-        lbl_overall->setText(QString("Archive %1 of %2: %3").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
-        setWindowTitle(QString("%1 (%2/%3) - %4 - 0%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
+        lbl_overall->setText(QString("Archive %1 of %2: %3 (Deriving encryption key...)").arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name));
+        setWindowTitle(QString("%1 (%2/%3) - %4 - %5%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(job.display_name).arg(current_pct));
         if (tr_ico && tr_ico->isVisible())
         {
             tr_ico->setToolTip(windowTitle());
@@ -605,13 +660,7 @@ namespace pk::ui::outs
         {
             m2_worker->ss_def_unpk_params(job.archive_path, job.base_out, job.password, job.keyfile, job.ext_behavior, job.ext_overwrite);
         }
-        connect(m2_worker, &worker::crypto_worker::success, this, &cd_prog_dialog::on_success);
-        connect(m2_worker, &worker::crypto_worker::error, this, &cd_prog_dialog::on_error);
-        connect(m2_worker, &worker::crypto_worker::progress, this, &cd_prog_dialog::on_progress);
-        connect(m2_worker, &worker::crypto_worker::pr_details, this, &cd_prog_dialog::on_pr_details);
-        connect(m2_worker, &worker::crypto_worker::current_ac0, this, &cd_prog_dialog::on_current_ac0);
-        connect(m2_worker, &worker::crypto_worker::current_file, this, &cd_prog_dialog::on_current_file);
-        connect(m2_worker, &QThread::finished, m2_worker, &QObject::deleteLater);
+        connect_worker(m2_worker);
         m2_worker->start();
         if (__in_bk)
         {
@@ -620,12 +669,15 @@ namespace pk::ui::outs
     }
     void cd_prog_dialog::reject()
     {
-        if (is_cancelled && (!m2_worker || !m2_worker->isRunning()))
+        if (is_cancelled)
         {
-            if (__in_bk)
-                restore_from_tray();
-            cleanup_tray();
-            QDialog::reject();
+            if (!m2_worker || !m2_worker->isRunning())
+            {
+                if (__in_bk)
+                    restore_from_tray();
+                cleanup_tray();
+                QDialog::reject();
+            }
             return;
         }
         is_cancelled = true;
@@ -703,7 +755,7 @@ namespace pk::ui::outs
         QDialog::changeEvent(event);
         if (event->type() == QEvent::WindowStateChange)
         {
-            if (isMinimized() && !__in_bk && !is_cancelled)
+            if (isMinimized() && !__in_bk && !is_cancelled && !done_called)
             {
                 QTimer::singleShot(0, this, &cd_prog_dialog::on_background);
             }
@@ -711,8 +763,13 @@ namespace pk::ui::outs
     }
     void cd_prog_dialog::on_background()
     {
-        if (__in_bk || is_cancelled)
+        if (__in_bk || is_cancelled || done_called)
             return;
+        if (!QSystemTrayIcon::isSystemTrayAvailable())
+        {
+            showMinimized();
+            return;
+        }
         __in_bk = true;
         prev_quit_ol = QApplication::quitOnLastWindowClosed();
         QApplication::setQuitOnLastWindowClosed(false);
@@ -749,15 +806,13 @@ namespace pk::ui::outs
         }
         tr_ico->setToolTip(windowTitle().isEmpty() ? "MAGE operation in background" : windowTitle());
         tr_ico->show();
-        hiding_in_tr = true;
         hide();
-        hiding_in_tr = false;
         if (parentWidget())
             parentWidget()->hide();
     }
     void cd_prog_dialog::on_tray_activated(QSystemTrayIcon::ActivationReason reason)
     {
-        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick)
+        if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick || reason == QSystemTrayIcon::MiddleClick)
         {
             restore_from_tray();
         }
@@ -853,26 +908,39 @@ namespace pk::ui::outs
     void cd_prog_dialog::on_progress(int percentage)
     {
         percentage = std::clamp(percentage, 0, 100);
-        if (percentage < current_pct)
-            percentage = current_pct;
-        current_pct = percentage;
-        if (indeterminate)
+        if (bm)
         {
-            indeterminate = false;
-            progress___->setRange(0, 100);
+            if (percentage < local_job_pct)
+                percentage = local_job_pct;
+            local_job_pct = percentage;
+            uint64_t cur_w = (curr_job_idx < m_jobs.size()) ? m_jobs[curr_job_idx].job_weight : 0ULL;
+            double overall_frac = (static_cast<double>(batch_done_weight) + (static_cast<double>(local_job_pct) / 100.0) * static_cast<double>(cur_w)) /
+                                  static_cast<double>(std::max<uint64_t>(1ULL, batch_total_weight));
+            overall_work_frac = std::max(overall_work_frac, std::clamp(overall_frac, 0.0, 1.0));
+            int cap = (curr_job_idx + 1 < m_jobs.size()) ? 99 : 100;
+            int mapped = std::clamp(static_cast<int>(overall_work_frac * 100.0), 0, cap);
+            if (mapped < current_pct)
+                mapped = current_pct;
+            current_pct = mapped;
         }
-        progress___->setValue(percentage);
-        progress___->setFormat(QString::number(percentage) + "%");
+        else
+        {
+            if (percentage < current_pct)
+                percentage = current_pct;
+            current_pct = percentage;
+        }
+        progress___->setValue(current_pct);
+        progress___->setFormat(QString::number(current_pct) + "%");
         if (bm)
         {
             QString action_verb = (curr_job_idx < m_jobs.size() && m_jobs[curr_job_idx].mode == worker::crypto_worker::mode::am_i_evil) ? "Verifying archive" : "Decrypting archive";
             if (curr_job_idx < m_jobs.size())
             {
-                setWindowTitle(QString("%1 (%2/%3) - %4 - %5%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(m_jobs[curr_job_idx].display_name).arg(percentage));
+                setWindowTitle(QString("%1 (%2/%3) - %4 - %5%").arg(action_verb).arg(curr_job_idx + 1).arg(m_jobs.size()).arg(m_jobs[curr_job_idx].display_name).arg(current_pct));
             }
             else
             {
-                setWindowTitle(QString("%1 - %2%").arg(action_verb).arg(percentage));
+                setWindowTitle(QString("%1 - %2%").arg(action_verb).arg(current_pct));
             }
         }
         else
@@ -885,7 +953,7 @@ namespace pk::ui::outs
                 else if (m2_worker->what_mode() == worker::crypto_worker::mode::am_i_evil)
                     base_title = "Verifying archive";
             }
-            setWindowTitle(base_title + " - " + QString::number(percentage) + "%");
+            setWindowTitle(base_title + " - " + QString::number(current_pct) + "%");
         }
         if (tr_ico && tr_ico->isVisible())
         {
@@ -894,10 +962,26 @@ namespace pk::ui::outs
     }
     void cd_prog_dialog::on_pr_details(uint64_t processed, uint64_t total)
     {
-        if (tot_bytes == 0 && total > 0)
-            phase_elapsed.restart();
+        if (tot_bytes == 0 && total > 0 && !phase_elapsed.isValid())
+            phase_elapsed.start();
         current_proc = processed;
         tot_bytes = total;
+    }
+    void cd_prog_dialog::on_scan_stats(uint64_t files_found, uint64_t bytes_found)
+    {
+        scan_files_found = files_found;
+        scan_bytes_found = bytes_found;
+    }
+    void cd_prog_dialog::on_file_counts(uint64_t done_files, uint64_t total_files)
+    {
+        done_files_count = done_files;
+        total_files_count = total_files;
+    }
+    void cd_prog_dialog::on_work_fraction(double fraction)
+    {
+        if (!phase_elapsed.isValid())
+            phase_elapsed.start();
+        phase_work_frac = std::clamp(fraction, 0.0, 1.0);
     }
     void cd_prog_dialog::on_current_ac0(const QString &action)
     {
@@ -917,24 +1001,15 @@ namespace pk::ui::outs
         {
             lbl_overall->setText(action);
         }
-        bool is_kdf = action.contains("Argon2id", Qt::CaseInsensitive) || action.contains("Deriving", Qt::CaseInsensitive);
-        if (is_kdf && current_pct == 0 && !indeterminate)
+        bool new_scanning = action.contains("Discovering", Qt::CaseInsensitive);
+        bool new_kdf = action.contains("Argon2id", Qt::CaseInsensitive) || action.contains("Deriving", Qt::CaseInsensitive);
+        if ((is_kdf || is_scanning) && !new_kdf && !new_scanning && !phase_elapsed.isValid())
         {
-            indeterminate = true;
-            progress___->setRange(0, 0);
-            progress___->setFormat("Deriving key...");
+            phase_elapsed.start();
+            speed_timer.restart();
         }
-        else if (is_kdf && indeterminate)
-        {
-            progress___->setFormat("Deriving key...");
-        }
-        else if (!is_kdf && indeterminate)
-        {
-            indeterminate = false;
-            progress___->setRange(0, 100);
-            progress___->setValue(current_pct);
-            progress___->setFormat(QString::number(current_pct) + "%");
-        }
+        is_scanning = new_scanning;
+        is_kdf = new_kdf;
     }
     void cd_prog_dialog::on_current_file(const QString &file)
     {
@@ -950,40 +1025,121 @@ namespace pk::ui::outs
         {
             return QString::fromStdString(pk::crypto::am_i_evil::format_bytes(s));
         };
-        uint64_t bytes_delta = (current_proc >= last_processed) ? (current_proc - last_processed) : 0;
-        last_processed = current_proc;
-        double speed_bytes_s = (double)bytes_delta * 2.0;
-        if (speed_bytes_s >= 1024.0 * 1024.0)
-            lbl_sped->setText(QString("%1MB/s").arg(speed_bytes_s / (1024.0 * 1024.0), 0, 'f', 2));
-        else if (speed_bytes_s >= 1024.0)
-            lbl_sped->setText(QString("%1KB/s").arg(speed_bytes_s / 1024.0, 0, 'f', 1));
-        else if (current_proc > 0)
-            lbl_sped->setText(QString("%1B/s").arg((uint64_t)speed_bytes_s));
-        else
-            lbl_sped->setText("-");
-        if (tot_bytes > 0)
-            lbl_proc->setText(format_size(current_proc) + " / " + format_size(tot_bytes));
-        else if (current_proc > 0)
-            lbl_proc->setText(format_size(current_proc));
-        else
-            lbl_proc->setText("-");
+        auto commas = [](uint64_t n) -> QString
+        {
+            return QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(n));
+        };
+        auto format_speed = [](double bps) -> QString
+        {
+            if (bps >= 1024.0 * 1024.0)
+                return QString("%1MB/s").arg(bps / (1024.0 * 1024.0), 0, 'f', 2);
+            if (bps >= 1024.0)
+                return QString("%1KB/s").arg(bps / 1024.0, 0, 'f', 1);
+            return QString("%1B/s").arg(static_cast<uint64_t>(bps));
+        };
+        double dt_sec = std::max(0.05, static_cast<double>(speed_timer.restart()) / 1000.0);
         qint64 total_ms = elapsed.elapsed();
         qint64 secs = total_ms / 1000;
         int h = secs / 3600;
         int m = (secs % 3600) / 60;
         int s = secs % 60;
         lbl_elapsed->setText(QString("%1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0')));
-        if (current_pct > 0 && current_pct < 100 && tot_bytes > 0 && current_proc > 0)
+
+        if (is_scanning)
         {
-            double fraction = (double)current_proc / (double)tot_bytes;
-            qint64 byte_ms = phase_elapsed.isValid() ? phase_elapsed.elapsed() : total_ms;
-            if (fraction > 0.001 && byte_ms > 0)
+            uint64_t items_delta = (scan_files_found >= last_scan_files) ? (scan_files_found - last_scan_files) : 0;
+            last_scan_files = scan_files_found;
+            double inst_items_s = static_cast<double>(items_delta) / dt_sec;
+            if (items_delta > 0)
+                ewma_scan_speed = (ewma_scan_speed <= 0.0) ? inst_items_s : (0.4 * inst_items_s + 0.6 * ewma_scan_speed);
+            lbl_proc->setText(QString("%1 discovered").arg(format_size(scan_bytes_found)));
+            lbl_sped->setText(ewma_scan_speed >= 1.0 ? QString("%1 items/s").arg(commas(static_cast<uint64_t>(ewma_scan_speed))) : QString("Scanning..."));
+            lbl_eta->setText("Scanning...");
+            lbl_file_count->setText(QString("%1 discovered").arg(commas(scan_files_found)));
+            return;
+        }
+
+        if (is_kdf)
+        {
+            if (bm)
             {
-                double est_total_ms = (double)byte_ms / fraction;
-                double remaining_ms = est_total_ms - (double)byte_ms;
-                qint64 rem_secs = (qint64)(remaining_ms / 1000.0);
-                if (rem_secs < 0)
-                    rem_secs = 0;
+                if (local_job_pct < 5)
+                    on_progress(local_job_pct + 1);
+            }
+            else
+            {
+                int kdf_cap = (m2_worker && m2_worker->what_mode() == worker::crypto_worker::mode::pack) ? 15 : 5;
+                if (current_pct < kdf_cap)
+                    on_progress(current_pct + 1);
+            }
+            if (tot_bytes > 0)
+                lbl_proc->setText(format_size(current_proc) + " / " + format_size(tot_bytes));
+            else if (scan_bytes_found > 0)
+                lbl_proc->setText(format_size(0) + " / " + format_size(scan_bytes_found));
+            else
+                lbl_proc->setText("Deriving key...");
+
+            lbl_sped->setText((bm && ewma_speed >= 1.0) ? format_speed(ewma_speed) : QString("Deriving key..."));
+            lbl_eta->setText("Deriving key...");
+            if (bm && m_jobs.size() > 1)
+                lbl_file_count->setText(QString("Archive %1 of %2").arg(std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()))).arg(m_jobs.size()));
+            else if (total_files_count > 0)
+                lbl_file_count->setText(QString("0 / %1").arg(commas(total_files_count)));
+            else if (scan_files_found > 0)
+                lbl_file_count->setText(QString("0 / %1").arg(commas(scan_files_found)));
+            else
+                lbl_file_count->setText("1 of 1");
+            return;
+        }
+
+        uint64_t bytes_delta = (current_proc >= last_processed) ? (current_proc - last_processed) : 0;
+        last_processed = current_proc;
+        double inst_speed = static_cast<double>(bytes_delta) / dt_sec;
+        if (bytes_delta > 0)
+            ewma_speed = (ewma_speed <= 0.0) ? inst_speed : (0.35 * inst_speed + 0.65 * ewma_speed);
+        else if (ewma_speed > 0.0)
+            ewma_speed *= 0.80;
+
+        if (ewma_speed >= 1.0)
+            lbl_sped->setText(format_speed(ewma_speed));
+        else if (done_files_count > 0)
+            lbl_sped->setText("Processing...");
+        else
+            lbl_sped->setText("-");
+
+        if (tot_bytes > 0)
+            lbl_proc->setText(format_size(current_proc) + " / " + format_size(tot_bytes));
+        else if (current_proc > 0)
+            lbl_proc->setText(format_size(current_proc));
+        else
+            lbl_proc->setText("0B / 0B");
+
+        if (current_pct >= 100)
+        {
+            lbl_eta->setText("Quick, wasn't it?");
+        }
+        else
+        {
+            double frac = 0.0;
+            qint64 ref_ms = 0;
+            if (bm && m_jobs.size() > 1)
+            {
+                frac = overall_work_frac;
+                ref_ms = total_ms;
+            }
+            else
+            {
+                frac = phase_work_frac;
+                if (frac <= 0.0 && tot_bytes > 0)
+                    frac = static_cast<double>(current_proc) / static_cast<double>(tot_bytes);
+                ref_ms = phase_elapsed.isValid() ? phase_elapsed.elapsed() : total_ms;
+            }
+            if (frac > 0.002 && ref_ms >= 250)
+            {
+                double est_total_ms = static_cast<double>(ref_ms) / frac;
+                double remaining_ms = std::max(0.0, est_total_ms - static_cast<double>(ref_ms));
+                ewma_eta_ms = (ewma_eta_ms < 0.0) ? remaining_ms : (0.4 * remaining_ms + 0.6 * ewma_eta_ms);
+                qint64 rem_secs = static_cast<qint64>(ewma_eta_ms / 1000.0);
                 int eh = rem_secs / 3600;
                 int em = (rem_secs % 3600) / 60;
                 int es = rem_secs % 60;
@@ -994,25 +1150,22 @@ namespace pk::ui::outs
                 lbl_eta->setText("Calculating...");
             }
         }
-        else if (current_pct >= 100)
+
+        if (bm && m_jobs.size() > 1)
         {
-            lbl_eta->setText("Quick, wasn't it?");
+            int cur_arch = std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()));
+            if (total_files_count > 0)
+                lbl_file_count->setText(QString("Archive %1 of %2 (%3 / %4)").arg(cur_arch).arg(m_jobs.size()).arg(commas(done_files_count)).arg(commas(total_files_count)));
+            else
+                lbl_file_count->setText(QString("Archive %1 of %2").arg(cur_arch).arg(m_jobs.size()));
+        }
+        else if (total_files_count > 0)
+        {
+            lbl_file_count->setText(QString("%1 / %2").arg(commas(done_files_count)).arg(commas(total_files_count)));
         }
         else
         {
-            lbl_eta->setText("-");
-        }
-        if (bm)
-        {
-            lbl_file_count->setText(QString("%1 of %2").arg(std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()))).arg(m_jobs.size()));
-        }
-        else if (!current_file_text.isEmpty() && tot_bytes > 0)
-        {
-            lbl_file_count->setText(QString("%1% complete").arg(current_pct));
-        }
-        else
-        {
-            lbl_file_count->setText("-");
+            lbl_file_count->setText("1 of 1");
         }
     }
     void cd_prog_dialog::on_success()
@@ -1026,6 +1179,7 @@ namespace pk::ui::outs
                 if (m2_worker)
                     rep = m2_worker->what_report();
                 job_res__.append({job.list_index, job.archive_path, job.display_name, true, "", false, rep});
+                batch_done_weight += job.job_weight;
             }
             if (m2_worker)
             {
@@ -1038,6 +1192,7 @@ namespace pk::ui::outs
         else
         {
             _success = true;
+            on_progress(100);
             pk::ui::sfx::play_success();
             if (__in_bk)
             {
@@ -1072,6 +1227,8 @@ namespace pk::ui::outs
                         rep = m2_worker->what_report();
                     job_res__.append({job.list_index, job.archive_path, job.display_name, false, msg, is_cancel, rep});
                 }
+                if (!is_cancel)
+                    batch_done_weight += m_jobs[curr_job_idx].job_weight;
             }
             if (m2_worker)
             {
@@ -1109,17 +1266,17 @@ namespace pk::ui::outs
             _success = false;
             current_err = msg;
             bool is_cancel = is_cancelled || msg.contains("cancelled", Qt::CaseInsensitive);
-            if (!is_cancel)
-            {
+            if (is_cancel)
+                is_cancelled = true;
+            else if (msg.isEmpty())
                 pk::ui::sfx::play_error();
-            }
             if (__in_bk)
             {
                 restore_from_tray();
                 QApplication::alert(parentWidget() ? parentWidget() : this);
             }
             cleanup_tray();
-            reject();
+            QDialog::reject();
         }
     }
     cd_keyfile::cd_keyfile(QWidget *parent)
@@ -1621,7 +1778,7 @@ namespace pk::ui::outs
         {
             if (safe_worker)
                 safe_worker->wait();
-            info(this, "Archive created", "Archive successfully created.");
+            info(this, "Archive created", "Archive successfully created.", QString(), false);
             accept();
         }
         else
@@ -2324,6 +2481,8 @@ namespace pk::ui::outs
         QStringList failed_names;
         QStringList failed_paths;
         QStringList failed_reasons;
+        int cancelled_count = 0;
+        int actual_error_count = 0;
         QList<cd_prog_dialog::decrypt_job> jobs;
         for (int i = 0; i < archive_list->count(); ++i)
         {
@@ -2343,6 +2502,7 @@ namespace pk::ui::outs
             }
             if (eff_pwd.isEmpty() && eff_kf.isEmpty())
             {
+                actual_error_count++;
                 failed_names.append(display_name);
                 failed_paths.append(archive_path);
                 failed_reasons.append("Missing credentials; no password or keyfile set for this archive.");
@@ -2362,11 +2522,19 @@ namespace pk::ui::outs
                 }
                 else
                 {
+                    if (r.cancelled)
+                        cancelled_count++;
+                    else
+                        actual_error_count++;
                     failed_names.append(r.display_name);
                     failed_paths.append(r.archive_path);
                     failed_reasons.append(r.cancelled ? "Decryption cancelled by user." : r.error_msg);
                 }
             }
+        }
+        if (actual_error_count == 0 && cancelled_count > 0 && succeeded_entries.isEmpty())
+        {
+            return;
         }
         QString summary;
         if (!succeeded_entries.isEmpty())
@@ -2379,7 +2547,8 @@ namespace pk::ui::outs
         }
         if (!failed_names.isEmpty())
         {
-            summary += QString("Failed (%1 archive%2):\n\n").arg(failed_names.size()).arg(failed_names.size() == 1 ? "" : "s");
+            QString hdr = (actual_error_count == 0) ? "Cancelled" : "Failed";
+            summary += QString("%1 (%2 archive%3):\n\n").arg(hdr).arg(failed_names.size()).arg(failed_names.size() == 1 ? "" : "s");
             for (int i = 0; i < failed_names.size(); ++i)
             {
                 QString raw_err = failed_reasons[i];
@@ -2415,7 +2584,9 @@ namespace pk::ui::outs
             }
         }
         if (failed_names.isEmpty())
-            info(this, "Decryption completed", summary.trimmed());
+            info(this, "Decryption completed", summary.trimmed(), QString(), false);
+        else if (actual_error_count == 0)
+            info(this, "Decryption cancelled", summary.trimmed());
         else if (succeeded_entries.isEmpty())
             error(this, "Decryption failed", summary.trimmed());
         else
@@ -3204,6 +3375,8 @@ namespace pk::ui::outs
         }
         QStringList passed_reports;
         QStringList failed_reports;
+        int cancelled_count = 0;
+        int actual_error_count = 0;
         QList<cd_prog_dialog::verify_job> jobs;
         for (int i = 0; i < static_cast<int>(m_reports.size()); ++i)
         {
@@ -3222,6 +3395,7 @@ namespace pk::ui::outs
             }
             if (eff_pwd.isEmpty() && eff_kf.isEmpty())
             {
+                actual_error_count++;
                 rep.verdict = pk::crypto::am_i_evil::__vv_::io_error;
                 rep.error_details = "No password or keyfile provided for this archive.";
                 QTreeWidgetItem *tree_item = queue_tree->topLevelItem(i);
@@ -3276,6 +3450,7 @@ namespace pk::ui::outs
                 {
                     if (res.cancelled)
                     {
+                        cancelled_count++;
                         if (tree_item)
                         {
                             tree_item->setText(2, "CANCELLED");
@@ -3287,6 +3462,7 @@ namespace pk::ui::outs
                     }
                     else
                     {
+                        actual_error_count++;
                         if (res.report.header.file_exists)
                         {
                             rep = res.report;
@@ -3311,6 +3487,10 @@ namespace pk::ui::outs
         update_qs();
         refresh_properties();
         adjust_qc();
+        if (actual_error_count == 0 && cancelled_count > 0 && passed_reports.isEmpty())
+        {
+            return;
+        }
         QString summary;
         if (!passed_reports.isEmpty())
         {
@@ -3321,12 +3501,17 @@ namespace pk::ui::outs
         {
             if (!summary.isEmpty())
                 summary += "\n\n";
-            summary += QString(">>> Verification failed (%1)\n\n").arg(failed_reports.size());
+            QString hdr = (actual_error_count == 0) ? "Verification cancelled" : "Verification failed";
+            summary += QString(">>> %1 (%2)\n\n").arg(hdr).arg(failed_reports.size());
             summary += failed_reports.join("\n\n");
         }
         if (failed_reports.isEmpty())
         {
-            info(this, "Verification completed", summary);
+            info(this, "Verification completed", summary, QString(), false);
+        }
+        else if (actual_error_count == 0)
+        {
+            info(this, "Verification cancelled", summary);
         }
         else if (passed_reports.isEmpty())
         {
@@ -3904,6 +4089,7 @@ namespace pk::ui::outs
             }, Qt::QueuedConnection); });
 
         cd_int_c->show();
+        pk::ui::outs::dont_burn_my_eyes(cd_int_c);
     }
 }
 
