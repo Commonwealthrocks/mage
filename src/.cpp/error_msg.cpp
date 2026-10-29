@@ -1,5 +1,5 @@
 // error_msg.cpp
-// last updated: 28/10/2026
+// last updated: 29/10/2026
 #include "../.hpp/error_msg.hpp"
 namespace pk::error
 {
@@ -243,7 +243,7 @@ namespace pk::error
             return {
                 "Keyfile error",
                 what,
-                "Ensure the keyfile exists, is accessible, and is exactly 512 bytes.",
+                "Ensure the keyfile exists, is accessible and is exactly 512 bytes.",
                 what};
         }
         if (what.find("VirtualLock quota exceeded") != std::string::npos || what.find("RLIMIT_MEMLOCK") != std::string::npos)
@@ -252,6 +252,16 @@ namespace pk::error
                 "Memory allocation error",
                 "Secure allocator failed to lock sensitive memory in RAM.",
                 "Check system memory limits or run with sufficient privileges.",
+                what};
+        }
+        if (what.find("filesystem error") != std::string::npos ||
+            what.find("cannot get file size") != std::string::npos ||
+            what.find("No such file or directory") != std::string::npos)
+        {
+            return {
+                "File access error",
+                what,
+                "Verify that the file exists, the path is accessible and you have sufficient read permissions.",
                 what};
         }
         auto semi_pos = what.find("; ");
@@ -268,7 +278,7 @@ namespace pk::error
         return {
             "Operation failed",
             what,
-            "Check the diagnostic details below for more information.",
+            "",
             what};
     }
     error_desc parse_idk()
