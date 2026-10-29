@@ -7,6 +7,7 @@
 #include "../.hpp/secure_memory.hpp"
 #include "../.hpp/outs.hpp"
 #include "../.hpp/sfx.hpp"
+#include "../.hpp/path_handler.hpp"
 #include <QApplication>
 #include <QMessageBox>
 #include <QPushButton>
@@ -61,18 +62,18 @@ namespace pk::ui::worker
         int ext_beh,
         int ext_ow)
     {
-        in_path = in.toStdString();
-        output_dir = out.toStdString();
-        password = pwd.toStdString();
-        keyfile_path = kf.toStdString();
+        in_path = in.toUtf8().toStdString();
+        output_dir = out.toUtf8().toStdString();
+        password = pwd.toUtf8().toStdString();
+        keyfile_path = kf.toUtf8().toStdString();
         ext_behavior_v = ext_beh;
         ext_overwrite_v = ext_ow;
     }
     void crypto_worker::ss_def_verify_params(const QString &in, const QString &pwd, const QString &kf)
     {
-        in_path = in.toStdString();
-        password = pwd.toStdString();
-        keyfile_path = kf.toStdString();
+        in_path = in.toUtf8().toStdString();
+        password = pwd.toUtf8().toStdString();
+        keyfile_path = kf.toUtf8().toStdString();
     }
     void crypto_worker::run()
     {
@@ -172,9 +173,15 @@ namespace pk::ui::worker
                 std::vector<pk::crypto::format::archive_entry> entries;
                 uint64_t discovered_bytes = 0;
                 int last_scan_p = 0;
-                std::filesystem::path abn___ = std::filesystem::path(output_path).stem();
+                std::filesystem::path out_fs_path = pk::path::from_utf8(output_path);
+                std::filesystem::path abn___ = out_fs_path.stem();
+                const std::string abn_utf8 = pk::path::to_utf8(abn___);
                 std::error_code ec_out;
-                auto abs_out = std::filesystem::weakly_canonical(output_path, ec_out);
+                auto abs_out = pk::path::weakly_canonical_safe(out_fs_path, ec_out);
+#ifdef _WIN32
+                const std::wstring abs_out_ext = ec_out ? std::wstring() : pk::path::to_ext_win32_path(abs_out);
+                const std::wstring abs_out_fname = ec_out ? std::wstring() : abs_out.filename().wstring();
+#endif
                 auto last_scan_emit_time = std::chrono::steady_clock::now();
                 auto last_pct_step_time = last_scan_emit_time;
                 std::size_t root_idx = 0;
@@ -208,48 +215,67 @@ namespace pk::ui::worker
                         pk::core::logger::log("scanning interrupted by user.");
                         return;
                     }
-                    std::filesystem::path root_path = root_str;
+                    std::filesystem::path root_path = pk::path::from_utf8(root_str);
+                    root_path.make_preferred();
+                    if (!root_path.has_filename() && root_path.has_parent_path() && root_path.parent_path() != root_path)
+                    {
+                        root_path = root_path.parent_path();
+                    }
                     std::error_code ec_root;
-                    auto abs_root = std::filesystem::weakly_canonical(root_path, ec_root);
+                    auto abs_root = pk::path::weakly_canonical_safe(root_path, ec_root);
+#ifdef _WIN32
+                    if (!ec_root && !ec_out && _wcsicmp(pk::path::to_ext_win32_path(abs_root).c_str(), abs_out_ext.c_str()) == 0)
+#else
                     if (!ec_root && !ec_out && abs_root == abs_out)
+#endif
                     {
                         throw std::runtime_error("the output archive cannot be placed inside a directory that is being archived, please choose a different output location.");
                     }
+                    const std::string root_fname_utf8 = pk::path::to_utf8(root_path.filename());
+                    const std::string root_rel_prefix = abn_utf8.empty() ? root_fname_utf8 : (abn_utf8 + "/" + root_fname_utf8);
 #ifdef _WIN32
-                    if (!_include_hidden)
+                    WIN32_FILE_ATTRIBUTE_DATA root_info{};
+                    if (!GetFileAttributesExW(pk::path::to_ext_win32_path(root_path).c_str(), GetFileExInfoStandard, &root_info))
                     {
-                        DWORD root_attrs = GetFileAttributesW(root_path.wstring().c_str());
-                        if (root_attrs != INVALID_FILE_ATTRIBUTES && (root_attrs & FILE_ATTRIBUTE_HIDDEN))
-                        {
-                            continue; // skipp
-                        }
+                        throw std::runtime_error("failed to open input file: " + pk::path::to_utf8(root_path));
                     }
+                    if (!_include_hidden && (root_info.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
+                    {
+                        root_idx++;
+                        continue; // skipp
+                    }
+                    if (root_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+                    {
+                        root_idx++;
+                        continue;
+                    }
+                    const bool root_is_dir = (root_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 #else
                     if (!_include_hidden)
                     {
-                        if (root_path.filename().string().front() == '.')
+                        if (!root_fname_utf8.empty() && root_fname_utf8.front() == '.')
+                        {
+                            root_idx++;
                             continue;
+                        }
                     }
+                    const bool root_is_dir = std::filesystem::is_directory(root_path);
 #endif
-                    if (std::filesystem::is_directory(root_path))
+                    if (root_is_dir)
                     {
                         {
                             pk::crypto::format::archive_entry dir_ae;
                             dir_ae.source_path = root_path;
                             dir_ae.is_directory = true;
                             dir_ae.file_size = 0;
-                            dir_ae.relative_path = (abn___ / root_path.filename()).generic_string();
+                            dir_ae.relative_path = root_rel_prefix;
                             if (__cp_metadata)
                             {
 #ifdef _WIN32
-                                WIN32_FILE_ATTRIBUTE_DATA rinfo;
-                                if (GetFileAttributesExW(root_path.wstring().c_str(), GetFileExInfoStandard, &rinfo))
-                                {
-                                    dir_ae.ctime = ((uint64_t)rinfo.ftCreationTime.dwHighDateTime << 32) | rinfo.ftCreationTime.dwLowDateTime;
-                                    dir_ae.atime = ((uint64_t)rinfo.ftLastAccessTime.dwHighDateTime << 32) | rinfo.ftLastAccessTime.dwLowDateTime;
-                                    dir_ae.mtime = ((uint64_t)rinfo.ftLastWriteTime.dwHighDateTime << 32) | rinfo.ftLastWriteTime.dwLowDateTime;
-                                    dir_ae.attrs = rinfo.dwFileAttributes;
-                                }
+                                dir_ae.ctime = ((uint64_t)root_info.ftCreationTime.dwHighDateTime << 32) | root_info.ftCreationTime.dwLowDateTime;
+                                dir_ae.atime = ((uint64_t)root_info.ftLastAccessTime.dwHighDateTime << 32) | root_info.ftLastAccessTime.dwLowDateTime;
+                                dir_ae.mtime = ((uint64_t)root_info.ftLastWriteTime.dwHighDateTime << 32) | root_info.ftLastWriteTime.dwLowDateTime;
+                                dir_ae.attrs = root_info.dwFileAttributes;
 #else
                                 struct stat rst;
                                 if (stat(root_path.string().c_str(), &rst) == 0)
@@ -267,6 +293,102 @@ namespace pk::ui::worker
                             }
                             entries.push_back(std::move(dir_ae));
                         }
+#ifdef _WIN32
+                        struct scan_frame
+                        {
+                            std::filesystem::path fs_dir;
+                            std::string rel_prefix;
+                        };
+                        std::vector<scan_frame> dir_stack;
+                        dir_stack.push_back({root_path, root_rel_prefix});
+                        while (!dir_stack.empty())
+                        {
+                            if (isInterruptionRequested())
+                            {
+                                pk::core::logger::log("directory scanning interrupted by user.");
+                                return;
+                            }
+                            scan_frame cur_frame = std::move(dir_stack.back());
+                            dir_stack.pop_back();
+                            std::wstring search_pat = pk::path::to_ext_win32_path(cur_frame.fs_dir);
+                            if (!search_pat.empty() && search_pat.back() != L'\\')
+                                search_pat.push_back(L'\\');
+                            search_pat.push_back(L'*');
+
+                            WIN32_FIND_DATAW fdata{};
+                            HANDLE hFind = FindFirstFileExW(search_pat.c_str(), FindExInfoBasic, &fdata, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+                            if (hFind == INVALID_HANDLE_VALUE)
+                            {
+                                continue;
+                            }
+                            std::vector<scan_frame> local_subdirs;
+                            {
+                                struct find_guard
+                                {
+                                    HANDLE h;
+                                    ~find_guard()
+                                    {
+                                        if (h != INVALID_HANDLE_VALUE)
+                                            FindClose(h);
+                                    }
+                                } fg{hFind};
+                                do
+                                {
+                                    if (isInterruptionRequested())
+                                    {
+                                        pk::core::logger::log("directory scanning interrupted by user.");
+                                        return;
+                                    }
+                                    if (fdata.cFileName[0] == L'.' &&
+                                        (fdata.cFileName[1] == L'\0' || (fdata.cFileName[1] == L'.' && fdata.cFileName[2] == L'\0')))
+                                    {
+                                        continue;
+                                    }
+                                    if (fdata.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+                                    {
+                                        continue;
+                                    }
+                                    if (!_include_hidden && (fdata.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
+                                    {
+                                        continue;
+                                    }
+                                    std::filesystem::path entry_p = cur_frame.fs_dir / fdata.cFileName;
+                                    if (!ec_out && !abs_out_fname.empty() && _wcsicmp(fdata.cFileName, abs_out_fname.c_str()) == 0)
+                                    {
+                                        if (_wcsicmp(pk::path::to_ext_win32_path(entry_p).c_str(), abs_out_ext.c_str()) == 0)
+                                        {
+                                            continue;
+                                        }
+                                    }
+                                    const bool is_dir = (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                                    std::string name_utf8 = pk::path::to_utf8(std::filesystem::path(fdata.cFileName));
+                                    pk::crypto::format::archive_entry ae;
+                                    ae.source_path = std::move(entry_p);
+                                    ae.is_directory = is_dir;
+                                    ae.file_size = is_dir ? 0ULL : ((static_cast<uint64_t>(fdata.nFileSizeHigh) << 32) | fdata.nFileSizeLow);
+                                    ae.relative_path = cur_frame.rel_prefix + "/" + name_utf8;
+                                    if (__cp_metadata)
+                                    {
+                                        ae.ctime = (static_cast<uint64_t>(fdata.ftCreationTime.dwHighDateTime) << 32) | fdata.ftCreationTime.dwLowDateTime;
+                                        ae.atime = (static_cast<uint64_t>(fdata.ftLastAccessTime.dwHighDateTime) << 32) | fdata.ftLastAccessTime.dwLowDateTime;
+                                        ae.mtime = (static_cast<uint64_t>(fdata.ftLastWriteTime.dwHighDateTime) << 32) | fdata.ftLastWriteTime.dwLowDateTime;
+                                        ae.attrs = fdata.dwFileAttributes;
+                                    }
+                                    discovered_bytes += ae.file_size;
+                                    if (is_dir)
+                                    {
+                                        local_subdirs.push_back({ae.source_path, ae.relative_path});
+                                    }
+                                    entries.push_back(std::move(ae));
+                                    emit_scan_tick(name_utf8);
+                                } while (FindNextFileW(hFind, &fdata));
+                            }
+                            for (auto it_sub = local_subdirs.rbegin(); it_sub != local_subdirs.rend(); ++it_sub)
+                            {
+                                dir_stack.push_back(std::move(*it_sub));
+                            }
+                        }
+#else
                         auto it = std::filesystem::recursive_directory_iterator(root_path, std::filesystem::directory_options::skip_permission_denied);
                         auto end = std::filesystem::recursive_directory_iterator();
                         while (it != end)
@@ -277,49 +399,35 @@ namespace pk::ui::worker
                                 return;
                             }
                             const auto &dir_entry = *it;
-#ifdef _WIN32
-                            // win32 has a call for this kind of stuff, microsoft knows better than me
-                            WIN32_FILE_ATTRIBUTE_DATA winfo;
-                            bool have_winfo = GetFileAttributesExW(dir_entry.path().wstring().c_str(), GetFileExInfoStandard, &winfo) != 0;
-                            if (!_include_hidden && have_winfo && (winfo.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN))
+                            std::filesystem::path entry_p = dir_entry.path();
+                            entry_p.make_preferred();
+                            if (dir_entry.is_symlink())
                             {
-                                if (dir_entry.is_directory())
+                                ++it;
+                                continue;
+                            }
+                            bool is_dir = dir_entry.is_directory();
+                            if (!_include_hidden && !entry_p.filename().string().empty() && entry_p.filename().string().front() == '.')
+                            {
+                                if (is_dir)
                                     it.disable_recursion_pending();
                                 ++it;
                                 continue;
                             }
-#else
-                            if (!_include_hidden && dir_entry.path().filename().string().front() == '.')
-                            {
-                                if (dir_entry.is_directory())
-                                    it.disable_recursion_pending();
-                                ++it;
-                                continue;
-                            }
-#endif
-                            // skip the output file itself if it's inside the scanned dir
                             if (!ec_out)
                             {
-                                auto entry_path = dir_entry.path().wstring();
-                                auto out_str = abs_out.wstring();
-                                if (entry_path == out_str)
+                                std::error_code ec_ent;
+                                if (std::filesystem::weakly_canonical(entry_p, ec_ent) == abs_out && !ec_ent)
                                 {
                                     ++it;
                                     continue;
                                 }
                             }
-                            bool is_dir = dir_entry.is_directory();
                             pk::crypto::format::archive_entry ae;
-                            ae.source_path = dir_entry.path();
+                            ae.source_path = entry_p;
                             ae.is_directory = is_dir;
-#ifdef _WIN32
-                            ae.file_size = is_dir ? 0 : (have_winfo ? (((uint64_t)winfo.nFileSizeHigh << 32) | winfo.nFileSizeLow) : std::filesystem::file_size(dir_entry.path()));
-#else
                             ae.file_size = is_dir ? 0 : dir_entry.file_size();
-#endif
-                            // std::filesystem::relative is VERY slow on windows
-                            // we know dir_entry is inside root_path, so just strip the prefix
-                            std::string rel_str = dir_entry.path().generic_string();
+                            std::string rel_str = entry_p.generic_string();
                             std::string root_str_gen = root_path.generic_string();
                             if (rel_str.length() > root_str_gen.length() && rel_str.compare(0, root_str_gen.length(), root_str_gen) == 0)
                             {
@@ -330,21 +438,12 @@ namespace pk::ui::worker
                                 }
                             }
                             if (rel_str.empty() || rel_str == ".")
-                                rel_str = dir_entry.path().filename().generic_string();
-                            ae.relative_path = (abn___ / root_path.filename() / rel_str).generic_string();
+                                rel_str = entry_p.filename().generic_string();
+                            ae.relative_path = root_rel_prefix + "/" + rel_str;
                             if (__cp_metadata)
                             {
-#ifdef _WIN32
-                                if (have_winfo)
-                                {
-                                    ae.ctime = ((uint64_t)winfo.ftCreationTime.dwHighDateTime << 32) | winfo.ftCreationTime.dwLowDateTime;
-                                    ae.atime = ((uint64_t)winfo.ftLastAccessTime.dwHighDateTime << 32) | winfo.ftLastAccessTime.dwLowDateTime;
-                                    ae.mtime = ((uint64_t)winfo.ftLastWriteTime.dwHighDateTime << 32) | winfo.ftLastWriteTime.dwLowDateTime;
-                                    ae.attrs = winfo.dwFileAttributes;
-                                }
-#else
                                 struct stat st;
-                                if (stat(dir_entry.path().string().c_str(), &st) == 0)
+                                if (stat(entry_p.string().c_str(), &st) == 0)
                                 {
                                     auto unix2ft = [](time_t t) -> uint64_t
                                     {
@@ -355,33 +454,36 @@ namespace pk::ui::worker
                                     ae.mtime = unix2ft(st.st_mtime);
                                     ae.attrs = st.st_mode;
                                 }
-#endif
                             }
                             discovered_bytes += ae.file_size;
                             entries.push_back(std::move(ae));
-                            emit_scan_tick(dir_entry.path().filename().string());
+                            emit_scan_tick(entry_p.filename().string());
                             ++it;
                         }
+#endif
                     }
                     else
                     {
-                        uint64_t fsize = std::filesystem::file_size(root_path);
+#ifdef _WIN32
+                        uint64_t fsize = ((static_cast<uint64_t>(root_info.nFileSizeHigh) << 32) | root_info.nFileSizeLow);
+#else
+                        std::error_code ec_sz;
+                        uint64_t fsize = std::filesystem::file_size(root_path, ec_sz);
+                        if (ec_sz)
+                            fsize = 0;
+#endif
                         pk::crypto::format::archive_entry ae;
                         ae.source_path = root_path;
-                        ae.relative_path = (abn___ / root_path.filename()).generic_string();
+                        ae.relative_path = root_rel_prefix;
                         ae.is_directory = false;
                         ae.file_size = fsize;
                         if (__cp_metadata)
                         {
 #ifdef _WIN32
-                            WIN32_FILE_ATTRIBUTE_DATA info;
-                            if (GetFileAttributesExW(ae.source_path.wstring().c_str(), GetFileExInfoStandard, &info))
-                            {
-                                ae.ctime = ((uint64_t)info.ftCreationTime.dwHighDateTime << 32) | info.ftCreationTime.dwLowDateTime;
-                                ae.atime = ((uint64_t)info.ftLastAccessTime.dwHighDateTime << 32) | info.ftLastAccessTime.dwLowDateTime;
-                                ae.mtime = ((uint64_t)info.ftLastWriteTime.dwHighDateTime << 32) | info.ftLastWriteTime.dwLowDateTime;
-                                ae.attrs = info.dwFileAttributes;
-                            }
+                            ae.ctime = ((uint64_t)root_info.ftCreationTime.dwHighDateTime << 32) | root_info.ftCreationTime.dwLowDateTime;
+                            ae.atime = ((uint64_t)root_info.ftLastAccessTime.dwHighDateTime << 32) | root_info.ftLastAccessTime.dwLowDateTime;
+                            ae.mtime = ((uint64_t)root_info.ftLastWriteTime.dwHighDateTime << 32) | root_info.ftLastWriteTime.dwLowDateTime;
+                            ae.attrs = root_info.dwFileAttributes;
 #else
                             struct stat st;
                             if (stat(ae.source_path.string().c_str(), &st) == 0)
@@ -399,7 +501,7 @@ namespace pk::ui::worker
                         }
                         discovered_bytes += ae.file_size;
                         entries.push_back(std::move(ae));
-                        emit_scan_tick(root_path.filename().string());
+                        emit_scan_tick(root_fname_utf8);
                     }
                     root_idx++;
                 }
@@ -414,7 +516,7 @@ namespace pk::ui::worker
                 emit progress(12);
                 emit current_ac0(QString("Discovered %1 item(s). Deriving encryption key...").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(entries.size()))));
                 emit current_file(" ");
-                pk::crypto::format::pack_archive(entries, output_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb, [this]() -> bool
+                pk::crypto::format::pack_archive(entries, out_fs_path, final_password, algo, __kdf_cfg, __cp_metadata, cmp_algo, cmp_lvl, static_cast<std::size_t>(cs_mbs) * 1024 * 1024, cb, status_cb, [this]() -> bool
                                                  { return isInterruptionRequested(); }, entry_cb);
                 pk::core::logger::log("worker successfully packed archive.");
             }
@@ -425,7 +527,7 @@ namespace pk::ui::worker
                 emit current_ac0("Deriving encryption key...");
                 int remembered_choice = -1;
                 pk::crypto::format::unpack_archive(
-                    in_path, output_dir, final_password, ext_behavior_v, ext_overwrite_v,
+                    pk::path::from_utf8(in_path), pk::path::from_utf8(output_dir), final_password, ext_behavior_v, ext_overwrite_v,
                     [this, &remembered_choice](const std::string &___filepath) -> int
                     {
                         if (isInterruptionRequested())
@@ -507,7 +609,7 @@ namespace pk::ui::worker
                 emit progress(0);
                 emit current_ac0("Deriving encryption key...");
                 verify_rep = pk::crypto::am_i_evil::verify_archive(
-                    in_path, final_password,
+                    pk::path::from_utf8(in_path), final_password,
                     [this, &cur_done_entries, &cur_total_entries, ENTRY_IO_WEIGHT](uint64_t processed, uint64_t total, const std::string &status)
                     {
                         QString qstatus = QString::fromStdString(status);
