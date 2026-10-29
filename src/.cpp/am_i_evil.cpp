@@ -150,14 +150,14 @@ namespace pk::crypto::am_i_evil
         header_report rep;
         rep.___filepath = archive_path;
         std::error_code ec;
-        if (!std::filesystem::exists(archive_path, ec) || std::filesystem::is_directory(archive_path, ec))
+        if (!std::filesystem::exists(pk::path::to_ext_path(archive_path), ec) || std::filesystem::is_directory(pk::path::to_ext_path(archive_path), ec))
         {
             rep.file_exists = false;
             rep.sanity_notes = "target file does not exist or is a directory.";
             return rep;
         }
         rep.file_exists = true;
-        rep.file_size_bytes = std::filesystem::file_size(archive_path, ec);
+        rep.file_size_bytes = std::filesystem::file_size(pk::path::to_ext_path(archive_path), ec);
         if (ec)
         {
             rep.sanity_notes = "failed to determine file size: " + ec.message();
@@ -169,7 +169,11 @@ namespace pk::crypto::am_i_evil
             rep.sanity_notes = "file is truncated (smaller than MAGE header: " + std::to_string(rep.file_size_bytes) + " < " + std::to_string(sizeof(pk::crypto::format::header_f)) + " bytes).";
             return rep;
         }
+#ifdef _WIN32
+        std::ifstream in(pk::path::to_ext_path(archive_path), std::ios::binary);
+#else
         std::ifstream in(archive_path, std::ios::binary);
+#endif
         if (!in)
         {
             rep.sanity_notes = "failed to open archive file for reading.";
@@ -324,7 +328,11 @@ namespace pk::crypto::am_i_evil
         }
         if (progress_cb)
             progress_cb(0, total_bytes, "Verifying archive integrity...");
+#ifdef _WIN32
+        std::ifstream in(pk::path::to_ext_path(archive_path), std::ios::binary);
+#else
         std::ifstream in(archive_path, std::ios::binary);
+#endif
         if (!in)
         {
             pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
@@ -761,7 +769,7 @@ namespace pk::crypto::am_i_evil
         for (std::size_t i = 0; i < reports.size(); ++i)
         {
             const auto &r = reports[i];
-            log << "Archive " << (i + 1) << ": " << r.header.___filepath.string() << "\n";
+            log << "Archive " << (i + 1) << ": " << pk::path::to_utf8(r.header.___filepath) << "\n";
             auto pad_item = [](const std::string &field, const std::string &val) -> std::string
             {
                 std::ostringstream s;
