@@ -1,5 +1,5 @@
 // path_handler.cpp
-// last updated: 02/10/2026
+// last updated: 29/10/2026
 #pragma once
 #include <string>
 #include <string_view>
@@ -53,6 +53,17 @@ namespace pk::path
     [[nodiscard]] bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p, std::error_code &ec) noexcept;
     [[nodiscard]] bool is_symlink_or_other_thingy_whatever(const std::filesystem::path &p) noexcept;
     [[nodiscard]] bool reserved_name(std::string_view segment) noexcept;
+    [[nodiscard]] std::filesystem::path from_utf8(std::string_view s);
+    [[nodiscard]] std::string to_utf8(const std::filesystem::path &p);
+    [[nodiscard]] std::filesystem::path weakly_canonical_safe(const std::filesystem::path &p, std::error_code &ec);
+    [[nodiscard]] bool mk_dirs_safe(const std::filesystem::path &p, std::error_code &ec);
+    bool rfs___(const std::filesystem::path &p, std::error_code &ec) noexcept;
+#ifdef _WIN32
+    [[nodiscard]] std::wstring to_ext_win32_path(const std::filesystem::path &p);
+    [[nodiscard]] std::filesystem::path to_ext_path(const std::filesystem::path &p);
+#else
+    [[nodiscard]] inline std::filesystem::path to_ext_path(const std::filesystem::path &p) { return p; }
+#endif
 }
 
 // end
