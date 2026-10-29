@@ -1,5 +1,5 @@
 // settings.hpp
-// last updated: 17/06/2026
+// last updated: 29/10/2026
 #pragma once
 #include <QString>
 #include <QJsonObject>
@@ -11,6 +11,9 @@ namespace pk::cfg
         static settings &instance();
         void load();
         void save() const;
+        QString cfg_dir() const;
+        QString settings_path() const;
+        QString magic_path() const;
         QString def_output_path() const { return def_output_path_v; }
         void ss_def_output_path(const QString &path) { def_output_path_v = path; }
         QString def_ext() const { return def_ext__; }
@@ -51,7 +54,7 @@ namespace pk::cfg
     private:
         settings();
         ~settings() = default;
-        QString settings_path() const;
+        void parse_settings_json(const QJsonObject &obj);
         QString def_output_path_v;
         QString def_ext__;
         bool mute_sfx_v;
