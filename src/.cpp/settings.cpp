@@ -1,5 +1,5 @@
 // settings.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include "../.hpp/settings.hpp"
 #include <QStandardPaths>
 #include <QDir>
@@ -32,8 +32,12 @@ namespace pk::cfg
                 reinterpret_cast<const uint8_t *>(payload.data()), payload.size(),
                 nullptr, 0,
                 reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size());
-            QJsonDocument plain_doc = QJsonDocument::fromJson(
-                QByteArray(reinterpret_cast<const char *>(pt.data()), pt.size()));
+            QByteArray raw_json(reinterpret_cast<const char *>(pt.data()), static_cast<qsizetype>(pt.size()));
+            QJsonDocument plain_doc = QJsonDocument::fromJson(raw_json);
+            if (!raw_json.isEmpty())
+                pk::mem_::secure_wipe(raw_json.data(), static_cast<std::size_t>(raw_json.size()));
+            if (!key.isEmpty())
+                pk::mem_::secure_wipe(key.data(), static_cast<std::size_t>(key.size()));
             if (!plain_doc.isObject())
                 return false;
             out_obj = plain_doc.object();
@@ -319,6 +323,10 @@ namespace pk::cfg
             reinterpret_cast<const uint8_t *>(plain_json.data()), plain_json.size(),
             nullptr, 0,
             nonce_res.first.data(), nonce_res.first.size());
+        if (!plain_json.isEmpty())
+            pk::mem_::secure_wipe(plain_json.data(), static_cast<std::size_t>(plain_json.size()));
+        if (!key.isEmpty())
+            pk::mem_::secure_wipe(key.data(), static_cast<std::size_t>(key.size()));
         QString nonce_b64 = QString(QByteArray(reinterpret_cast<const char *>(nonce_res.first.data()), nonce_res.first.size()).toBase64());
         QString payload_b64 = QString(QByteArray(reinterpret_cast<const char *>(ct.data()), ct.size()).toBase64());
         QJsonObject magic_obj;
@@ -328,6 +336,7 @@ namespace pk::cfg
         QFile m_file(magic_path());
         if (m_file.open(QIODevice::WriteOnly))
         {
+            m_file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
             m_file.write(magic_doc.toJson(QJsonDocument::Indented));
         }
         QJsonObject settings_obj;
@@ -338,6 +347,7 @@ namespace pk::cfg
         QFile s_file(settings_path());
         if (s_file.open(QIODevice::WriteOnly))
         {
+            s_file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
             s_file.write(settings_doc.toJson(QJsonDocument::Indented));
             pk::core::logger::log("settings encrypted and saved to settings.json and magic.json.");
         }
