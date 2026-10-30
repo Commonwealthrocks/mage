@@ -1,6 +1,7 @@
 // cmp_e.cpp
-// last updated: 17/06/2026
+// last updated: 30/10/2026
 #include "../.hpp/compression.hpp"
+#include "../.hpp/secure_memory.hpp"
 #include <stdexcept>
 #include <algorithm>
 #include <cstring>
@@ -26,6 +27,8 @@ namespace pk::crypto::cmp_e
         }
         ~zstd_compressor() override
         {
+            if (!out_buffer.empty())
+                pk::mem_::secure_wipe(out_buffer.data(), out_buffer.size());
             if (ctx)
                 ZSTD_freeCCtx(ctx);
         }
@@ -75,6 +78,7 @@ namespace pk::crypto::cmp_e
         std::vector<uint8_t> out_buffer;
         std::size_t out_pos = 0;
         std::size_t out_avail = 0;
+        std::size_t last_ret = 1;
 
     public:
         zstd_decompressor()
@@ -88,22 +92,38 @@ namespace pk::crypto::cmp_e
         }
         ~zstd_decompressor() override
         {
+            if (!in_buffer.empty())
+                pk::mem_::secure_wipe(in_buffer.data(), in_buffer.size());
+            if (!out_buffer.empty())
+                pk::mem_::secure_wipe(out_buffer.data(), out_buffer.size());
             if (ctx)
                 ZSTD_freeDCtx(ctx);
         }
         void feed(const void *data, std::size_t size) override
         {
+            if (size == 0)
+                return;
             const uint8_t *ptr = static_cast<const uint8_t *>(data);
             if (in_start > 0 && in_start > in_buffer.size() / 2)
             {
                 std::size_t remaining = in_end - in_start;
-                std::memmove(in_buffer.data(), in_buffer.data() + in_start, remaining);
+                if (remaining > 0)
+                    std::memmove(in_buffer.data(), in_buffer.data() + in_start, remaining);
+                pk::mem_::secure_wipe(in_buffer.data() + remaining, in_end - remaining);
                 in_start = 0;
                 in_end = remaining;
             }
             if (in_end + size > in_buffer.size())
             {
-                in_buffer.resize(in_end + size);
+                std::size_t remaining = in_end - in_start;
+                std::size_t new_cap = std::max(remaining + size, in_buffer.size() * 2);
+                std::vector<uint8_t> grown(new_cap);
+                if (remaining > 0)
+                    std::memcpy(grown.data(), in_buffer.data() + in_start, remaining);
+                pk::mem_::secure_wipe(in_buffer.data(), in_buffer.size());
+                in_buffer = std::move(grown);
+                in_start = 0;
+                in_end = remaining;
             }
             std::memcpy(in_buffer.data() + in_end, ptr, size);
             in_end += size;
@@ -124,6 +144,12 @@ namespace pk::crypto::cmp_e
                     if (total_read == size)
                         return total_read;
                 }
+                if (last_ret == 0)
+                {
+                    if (in_start < in_end)
+                        throw std::runtime_error("corrupted compressed stream (unexpected trailing data after ZSTD frame)");
+                    throw std::runtime_error("corrupted compressed stream (premature end of ZSTD frame)");
+                }
                 if (in_start >= in_end)
                 {
                     break;
@@ -136,8 +162,38 @@ namespace pk::crypto::cmp_e
                 in_start += input.pos;
                 out_pos = 0;
                 out_avail = output.pos;
+                last_ret = ret;
+                if (input.pos == 0 && output.pos == 0)
+                {
+                    if (last_ret == 0)
+                        continue;
+                    break;
+                }
             }
             return total_read;
+        }
+        void finish_chk() override
+        {
+            while (last_ret != 0 && in_start < in_end)
+            {
+                ZSTD_inBuffer input = {in_buffer.data() + in_start, in_end - in_start, 0};
+                ZSTD_outBuffer output = {out_buffer.data(), out_buffer.size(), 0};
+                std::size_t ret = ZSTD_decompressStream(ctx, &output, &input);
+                if (ZSTD_isError(ret))
+                    throw std::runtime_error("ZSTD decompression failed");
+                in_start += input.pos;
+                if (output.pos > 0)
+                    throw std::runtime_error("corrupted compressed stream (unexpected extra payload data)");
+                last_ret = ret;
+                if (input.pos == 0 && output.pos == 0 && last_ret != 0)
+                    break;
+            }
+            if (out_avail > 0)
+                throw std::runtime_error("corrupted compressed stream (unexpected extra payload data)");
+            if (last_ret != 0)
+                throw std::runtime_error("corrupted compressed stream (truncated ZSTD frame)");
+            if (in_start < in_end)
+                throw std::runtime_error("corrupted compressed stream (unexpected trailing data after ZSTD frame)");
         }
     };
     // liblzma is provided under the 0bsd clause license
@@ -157,6 +213,8 @@ namespace pk::crypto::cmp_e
         }
         ~lzma_compressor() override
         {
+            if (!out_buffer.empty())
+                pk::mem_::secure_wipe(out_buffer.data(), out_buffer.size());
             lzma_end(&strm);
         }
         std::vector<uint8_t> cmp(const void *data, std::size_t size) override
@@ -208,16 +266,18 @@ namespace pk::crypto::cmp_e
     {
         lzma_stream strm = LZMA_STREAM_INIT;
         std::vector<uint8_t> in_buffer;
-        std::size_t in_start = 0; // Issue #3: track consumed region
+        std::size_t in_start = 0;
         std::size_t in_end = 0;
         std::vector<uint8_t> out_buffer;
         std::size_t out_pos = 0;
         std::size_t out_avail = 0;
+        bool stream_ended = false;
 
     public:
         lzma_decompressor()
         {
-            lzma_ret ret = lzma_auto_decoder(&strm, UINT64_MAX, 0);
+            constexpr uint64_t k_max_lzma_dict_mem = 256ULL * 1024 * 1024;
+            lzma_ret ret = lzma_auto_decoder(&strm, k_max_lzma_dict_mem, 0);
             if (ret != LZMA_OK)
                 throw std::runtime_error("failed to initialize LZMA decoder");
             out_buffer.resize(65536);
@@ -226,21 +286,37 @@ namespace pk::crypto::cmp_e
         }
         ~lzma_decompressor() override
         {
+            if (!in_buffer.empty())
+                pk::mem_::secure_wipe(in_buffer.data(), in_buffer.size());
+            if (!out_buffer.empty())
+                pk::mem_::secure_wipe(out_buffer.data(), out_buffer.size());
             lzma_end(&strm);
         }
         void feed(const void *data, std::size_t size) override
         {
+            if (size == 0)
+                return;
             const uint8_t *ptr = static_cast<const uint8_t *>(data);
             if (in_start > 0 && in_start > in_buffer.size() / 2)
             {
                 std::size_t remaining = in_end - in_start;
-                std::memmove(in_buffer.data(), in_buffer.data() + in_start, remaining);
+                if (remaining > 0)
+                    std::memmove(in_buffer.data(), in_buffer.data() + in_start, remaining);
+                pk::mem_::secure_wipe(in_buffer.data() + remaining, in_end - remaining);
                 in_start = 0;
                 in_end = remaining;
             }
             if (in_end + size > in_buffer.size())
             {
-                in_buffer.resize(in_end + size);
+                std::size_t remaining = in_end - in_start;
+                std::size_t new_cap = std::max(remaining + size, in_buffer.size() * 2);
+                std::vector<uint8_t> grown(new_cap);
+                if (remaining > 0)
+                    std::memcpy(grown.data(), in_buffer.data() + in_start, remaining);
+                pk::mem_::secure_wipe(in_buffer.data(), in_buffer.size());
+                in_buffer = std::move(grown);
+                in_start = 0;
+                in_end = remaining;
             }
             std::memcpy(in_buffer.data() + in_end, ptr, size);
             in_end += size;
@@ -262,20 +338,69 @@ namespace pk::crypto::cmp_e
                     if (total_read == size)
                         return total_read;
                 }
+                if (stream_ended)
+                {
+                    if (in_start < in_end)
+                        throw std::runtime_error("corrupted compressed stream (unexpected trailing data after LZMA stream)");
+                    throw std::runtime_error("corrupted compressed stream (premature end of LZMA stream)");
+                }
                 strm.next_in = in_buffer.data() + in_start;
                 strm.avail_in = in_end - in_start;
                 if (strm.avail_in == 0)
                     break;
+                std::size_t prev_avail_in = strm.avail_in;
                 strm.next_out = out_buffer.data();
                 strm.avail_out = out_buffer.size();
                 lzma_ret ret = lzma_code(&strm, LZMA_RUN);
+                if (ret == LZMA_MEMLIMIT_ERROR)
+                    throw std::runtime_error("corrupted or malicious archive -> LZMA dictionary exceeds 256MB safety limit");
                 if (ret != LZMA_OK && ret != LZMA_STREAM_END)
                     throw std::runtime_error("LZMA decompression failed");
-                in_start = in_end - strm.avail_in;
+                std::size_t consumed = prev_avail_in - strm.avail_in;
+                in_start += consumed;
                 out_pos = 0;
                 out_avail = out_buffer.size() - strm.avail_out;
+                if (ret == LZMA_STREAM_END)
+                    stream_ended = true;
+                if (consumed == 0 && out_avail == 0)
+                {
+                    if (stream_ended)
+                        continue;
+                    break;
+                }
             }
             return total_read;
+        }
+        void finish_chk() override
+        {
+            while (!stream_ended && in_start < in_end)
+            {
+                strm.next_in = in_buffer.data() + in_start;
+                strm.avail_in = in_end - in_start;
+                std::size_t prev_avail_in = strm.avail_in;
+                strm.next_out = out_buffer.data();
+                strm.avail_out = out_buffer.size();
+                lzma_ret ret = lzma_code(&strm, LZMA_RUN);
+                if (ret == LZMA_MEMLIMIT_ERROR)
+                    throw std::runtime_error("corrupted or malicious archive -> LZMA dictionary exceeds 256MB safety limit");
+                if (ret != LZMA_OK && ret != LZMA_STREAM_END)
+                    throw std::runtime_error("LZMA decompression failed");
+                std::size_t consumed = prev_avail_in - strm.avail_in;
+                std::size_t produced = out_buffer.size() - strm.avail_out;
+                in_start += consumed;
+                if (produced > 0)
+                    throw std::runtime_error("corrupted compressed stream (unexpected extra payload data)");
+                if (ret == LZMA_STREAM_END)
+                    stream_ended = true;
+                if (consumed == 0 && produced == 0 && !stream_ended)
+                    break;
+            }
+            if (out_avail > 0)
+                throw std::runtime_error("corrupted compressed stream (unexpected extra payload data)");
+            if (!stream_ended)
+                throw std::runtime_error("corrupted compressed stream (truncated LZMA stream)");
+            if (in_start < in_end)
+                throw std::runtime_error("corrupted compressed stream (unexpected trailing data after LZMA stream)");
         }
     };
     std::unique_ptr<stream_cmp> mk_cmp_e(algorithm algo, int level)
