@@ -1,6 +1,7 @@
 // aes256gcm.cpp
-// last updated: 29/08/2026
+// last updated: 30/10/2026
 #include "../.hpp/aes256gcm.hpp"
+#include <limits>
 namespace pk::crypto::cipher
 {
     aes256gcm::aes256gcm()
@@ -29,6 +30,9 @@ namespace pk::crypto::cipher
             throw std::logic_error("cipher not initialized.");
         if (nonce_len != 12)
             throw std::invalid_argument("invalid nonce size.");
+        constexpr std::size_t k_max_int = static_cast<std::size_t>(std::numeric_limits<int>::max()) - 32;
+        if (pt_len > k_max_int || ad_len > k_max_int)
+            throw std::invalid_argument("chunk or AD length exceeds OpenSSL bounds.");
         std::vector<uint8_t> out(pt_len + 16);
         int len = 0;
         if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr))
@@ -47,7 +51,8 @@ namespace pk::crypto::cipher
             if (1 != EVP_EncryptUpdate(ctx, out.data(), &len, plaintext_chunk, static_cast<int>(pt_len)))
                 throw std::runtime_error("EVP_EncryptUpdate plaintext failed.");
         }
-        if (1 != EVP_EncryptFinal_ex(ctx, out.data() + len, &len))
+        int final_len = 0;
+        if (1 != EVP_EncryptFinal_ex(ctx, out.data() + len, &final_len))
             throw std::runtime_error("EVP_EncryptFinal_ex failed.");
         if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, out.data() + pt_len))
             throw std::runtime_error("EVP_CIPHER_CTX_ctrl get tag failed.");
@@ -65,6 +70,9 @@ namespace pk::crypto::cipher
         if (ct_len < 16)
             throw std::invalid_argument("ciphertext too short.");
         std::size_t plaintext_len = ct_len - 16;
+        constexpr std::size_t k_max_int = static_cast<std::size_t>(std::numeric_limits<int>::max()) - 32;
+        if (plaintext_len > k_max_int || ad_len > k_max_int)
+            throw std::invalid_argument("chunk or AD length exceeds OpenSSL bounds.");
         pk::mem_::secure_vector out(plaintext_len);
         int len = 0;
         if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr))
@@ -78,14 +86,16 @@ namespace pk::crypto::cipher
             if (1 != EVP_DecryptUpdate(ctx, nullptr, &len, ad, static_cast<int>(ad_len)))
                 throw std::runtime_error("EVP_DecryptUpdate AD failed.");
         }
+        int pt_out_len = 0;
         if (plaintext_len > 0)
         {
-            if (1 != EVP_DecryptUpdate(ctx, out.data(), &len, ciphertext_with_mac, static_cast<int>(plaintext_len)))
+            if (1 != EVP_DecryptUpdate(ctx, out.data(), &pt_out_len, ciphertext_with_mac, static_cast<int>(plaintext_len)))
                 throw std::runtime_error("EVP_DecryptUpdate ciphertext failed.");
         }
         if (1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, const_cast<uint8_t *>(ciphertext_with_mac + plaintext_len)))
             throw std::runtime_error("EVP_CIPHER_CTX_ctrl set tag failed.");
-        int ret = EVP_DecryptFinal_ex(ctx, out.data() + len, &len);
+        int final_len = 0;
+        int ret = EVP_DecryptFinal_ex(ctx, out.data() + pt_out_len, &final_len);
         if (ret <= 0)
         {
             throw std::runtime_error("MAC verification failed.");
