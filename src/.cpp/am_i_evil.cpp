@@ -1,5 +1,5 @@
 // am_i_evil.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 // am i really that evil?
 #include "../.hpp/am_i_evil.hpp"
 #include "../.hpp/path_handler.hpp"
@@ -18,6 +18,42 @@
 #include <sodium.h>
 namespace pk::crypto::am_i_evil
 {
+    static int utf8_display_width(std::string_view s)
+    {
+        int count = 0;
+        for (unsigned char c : s)
+        {
+            if ((c & 0xC0) != 0x80)
+                count++;
+        }
+        return count;
+    }
+    static std::string sanitize_log_text(std::string_view s, std::size_t max_chars = 512)
+    {
+        std::string out;
+        out.reserve(std::min<std::size_t>(s.size(), max_chars));
+        std::size_t count = 0;
+        for (unsigned char uc : s)
+        {
+            if (count >= max_chars)
+            {
+                out += "...";
+                break;
+            }
+            if (uc < 0x20 || uc == 0x7F)
+            {
+                char hex_buf[5];
+                std::snprintf(hex_buf, sizeof(hex_buf), "\\x%02X", static_cast<unsigned int>(uc));
+                out += hex_buf;
+            }
+            else
+            {
+                out.push_back(static_cast<char>(uc));
+            }
+            count++;
+        }
+        return out;
+    }
     std::string numbers_with_commas_unlike_in_gta_5(uint64_t val)
     {
         std::string s = std::to_string(val);
@@ -92,6 +128,8 @@ namespace pk::crypto::am_i_evil
             return "potential zipbomb";
         case __vv_::traversal_attack:
             return "path traversal / malicious relative path detected";
+        case __vv_::cancelled:
+            return "verification cancelled by user";
         case __vv_::io_error:
         default:
             return "I/O or read error";
@@ -99,17 +137,17 @@ namespace pk::crypto::am_i_evil
     }
     int calculate_tab_width(const std::string &header, const std::vector<std::string> &entries, int default_min_width, int min_side_padding)
     {
-        int max_len = static_cast<int>(header.length());
+        int max_len = utf8_display_width(header);
         for (const auto &e : entries)
         {
-            max_len = std::max(max_len, static_cast<int>(e.length()));
+            max_len = std::max(max_len, utf8_display_width(e));
         }
         int needed_width = max_len + (min_side_padding * 2);
         return std::max(default_min_width, needed_width);
     }
     std::string center_text(const std::string &text, int width)
     {
-        int len = static_cast<int>(text.length());
+        int len = utf8_display_width(text);
         if (len >= width)
         {
             return text;
@@ -149,18 +187,32 @@ namespace pk::crypto::am_i_evil
     {
         header_report rep;
         rep.___filepath = archive_path;
+        rep.kdf_safe = true;
         std::error_code ec;
-        if (!std::filesystem::exists(pk::path::to_ext_path(archive_path), ec) || std::filesystem::is_directory(pk::path::to_ext_path(archive_path), ec))
+        const auto ext_p = pk::path::to_ext_path(archive_path);
+        if (!std::filesystem::exists(ext_p, ec))
         {
             rep.file_exists = false;
-            rep.sanity_notes = "target file does not exist or is a directory.";
+            rep.sanity_notes = "target file does not exist.";
+            return rep;
+        }
+        if (std::filesystem::is_directory(ext_p, ec))
+        {
+            rep.file_exists = false;
+            rep.sanity_notes = "target path is a directory, not an archive file.";
+            return rep;
+        }
+        if (!std::filesystem::is_regular_file(ext_p, ec))
+        {
+            rep.file_exists = false;
+            rep.sanity_notes = "target path is not a regular file.";
             return rep;
         }
         rep.file_exists = true;
-        rep.file_size_bytes = std::filesystem::file_size(pk::path::to_ext_path(archive_path), ec);
+        rep.file_size_bytes = std::filesystem::file_size(ext_p, ec);
         if (ec)
         {
-            rep.sanity_notes = "failed to determine file size: " + ec.message();
+            rep.sanity_notes = "failed to determine file size: " + sanitize_log_text(ec.message());
             return rep;
         }
         if (rep.file_size_bytes < sizeof(pk::crypto::format::header_f))
@@ -170,7 +222,7 @@ namespace pk::crypto::am_i_evil
             return rep;
         }
 #ifdef _WIN32
-        std::ifstream in(pk::path::to_ext_path(archive_path), std::ios::binary);
+        std::ifstream in(ext_p, std::ios::binary);
 #else
         std::ifstream in(archive_path, std::ios::binary);
 #endif
@@ -209,14 +261,6 @@ namespace pk::crypto::am_i_evil
             }
             return rep;
         }
-        if (hdr.algo > 2 && hdr.compression_algo > 1)
-        {
-            rep.valid_magic = false;
-            rep.structure_ok = false;
-            rep.kdf_safe = true;
-            rep.sanity_notes = "corrupted container header; unrecognized cipher and compression identifiers.";
-            return rep;
-        }
         rep.valid_magic = true;
         rep.version = hdr.version;
         rep.algo_id = hdr.algo;
@@ -232,44 +276,66 @@ namespace pk::crypto::am_i_evil
         std::memcpy(rep.salt, hdr.salt, 16);
         std::memcpy(rep.base_nonce, hdr.base_nonce, 24);
         bool dos_detected = false;
+        bool struct_valid = true;
         if (hdr.memory_cost_kb > 2 * 1024 * 1024)
         {
             dos_detected = true;
             rep.sanity_notes += "WARN (memory exceeds 2GBs) (" + format_bytes(static_cast<uint64_t>(hdr.memory_cost_kb) * 1024) + "). ";
+        }
+        else if (hdr.memory_cost_kb < 1024 || (hdr.parallelism >= 1 && hdr.memory_cost_kb < 8ULL * hdr.parallelism))
+        {
+            struct_valid = false;
+            rep.sanity_notes += "invalid KDF memory cost (minimum 1MB and 8KB per lane required). ";
         }
         if (hdr.time_cost > 32)
         {
             dos_detected = true;
             rep.sanity_notes += "WARN (time cost exceeds 32) -> (" + std::to_string(hdr.time_cost) + " passes). ";
         }
-        if (hdr.parallelism < 1 || hdr.parallelism > 32)
+        else if (hdr.time_cost < 1)
+        {
+            struct_valid = false;
+            rep.sanity_notes += "invalid KDF time cost (minimum 1 pass required). ";
+        }
+        if (hdr.parallelism > 32)
         {
             dos_detected = true;
-            rep.sanity_notes += "WARN (parallelism are one too many) -> (" + std::to_string(hdr.parallelism) + " threads). ";
+            rep.sanity_notes += "WARN (parallelism exceeds 32) -> (" + std::to_string(hdr.parallelism) + " threads). ";
+        }
+        else if (hdr.parallelism < 1)
+        {
+            struct_valid = false;
+            rep.sanity_notes += "invalid KDF parallelism (minimum 1 thread required). ";
         }
         rep.kdf_safe = !dos_detected;
         if (hdr.algo > 2)
         {
-            rep.structure_ok = false;
+            struct_valid = false;
             rep.sanity_notes += "unrecognized cipher algorithm ID (" + std::to_string(hdr.algo) + "). ";
         }
         if (hdr.compression_algo > 1)
         {
-            rep.structure_ok = false;
+            struct_valid = false;
             rep.sanity_notes += "unrecognized compression algorithm ID (" + std::to_string(hdr.compression_algo) + "). ";
         }
         if (hdr.chunk_size_bytes < 1024 * 1024 || hdr.chunk_size_bytes > 64 * 1024 * 1024)
         {
-            rep.structure_ok = false;
+            struct_valid = false;
             rep.sanity_notes += "chunk size out of bounds (1MB - 64MBs required). ";
+        }
+        else if (rep.file_size_bytes <= sizeof(pk::crypto::format::header_f) + 16)
+        {
+            struct_valid = false;
+            rep.est_chunks = 0;
+            rep.sanity_notes += "archive payload is truncated (missing minimum encrypted chunk and 16-byte AEAD tag). ";
         }
         else
         {
             const uint64_t payload_bytes = rep.file_size_bytes - sizeof(pk::crypto::format::header_f);
-            const uint64_t chunk_payload = hdr.chunk_size_bytes + 16;
+            const uint64_t chunk_payload = static_cast<uint64_t>(hdr.chunk_size_bytes) + 16ULL;
             rep.est_chunks = (payload_bytes + chunk_payload - 1) / chunk_payload;
-            rep.structure_ok = !dos_detected;
         }
+        rep.structure_ok = struct_valid && !dos_detected;
         if (rep.sanity_notes.empty())
         {
             rep.sanity_notes = "container header structure and parameters are standard and valid.";
@@ -310,6 +376,12 @@ namespace pk::crypto::am_i_evil
             rep.error_details = rep.header.sanity_notes;
             return rep;
         }
+        if (cancel_cb && cancel_cb())
+        {
+            rep.verdict = __vv_::cancelled;
+            rep.error_details = "verification cancelled by user.";
+            return rep;
+        }
         const uint64_t total_bytes = rep.header.file_size_bytes;
         uint64_t processed_bytes = sizeof(pk::crypto::format::header_f);
         if (progress_cb)
@@ -322,8 +394,16 @@ namespace pk::crypto::am_i_evil
         auto key_res = pk::crypto::kdf::derive_key(password, rep.header.salt, 16, kdf_cfg);
         if (!pk::crypto::kdf::ok(key_res.second))
         {
-            rep.verdict = __vv_::wrong_password;
-            rep.error_details = "Key derivation failed.";
+            rep.verdict = __vv_::header_but_not_ok;
+            rep.error_details = "Key derivation failed (invalid KDF parameters or insufficient memory).";
+            return rep;
+        }
+        if (cancel_cb && cancel_cb())
+        {
+            pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+            key_res.first.clear();
+            rep.verdict = __vv_::cancelled;
+            rep.error_details = "verification cancelled by user.";
             return rep;
         }
         if (progress_cb)
@@ -343,6 +423,14 @@ namespace pk::crypto::am_i_evil
         }
         pk::crypto::format::header_f header{};
         in.read(reinterpret_cast<char *>(&header), sizeof(header));
+        if (in.gcount() != sizeof(header))
+        {
+            pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
+            key_res.first.clear();
+            rep.verdict = __vv_::io_error;
+            rep.error_details = "Failed to read archive header during verification.";
+            return rep;
+        }
         auto cipher = cipher::mk_cipher(static_cast<cipher::algorithm>(rep.header.algo_id));
         cipher->init(key_res.first.data(), key_res.first.size());
         pk::mem_::secure_wipe(key_res.first.data(), key_res.first.size());
@@ -376,10 +464,14 @@ namespace pk::crypto::am_i_evil
         auto fetch_next_chunk = [&]()
         {
             if (cancel_cb && cancel_cb())
-                throw std::runtime_error("verification cancelled by user.");
+            {
+                rep.verdict = __vv_::cancelled;
+                rep.error_details = "verification cancelled by user.";
+                throw std::runtime_error(rep.error_details);
+            }
 
             in.read(reinterpret_cast<char *>(buffer.data()), buffer.size());
-            std::size_t bytes_read = in.gcount();
+            std::size_t bytes_read = static_cast<std::size_t>(in.gcount());
             if (bytes_read == 0)
             {
                 rep.failed_chunk_index = chunk_index;
@@ -403,9 +495,12 @@ namespace pk::crypto::am_i_evil
             {
                 ad[sizeof(header) + i] = static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
             }
-
             try
             {
+                if (!plaintext_stream.empty())
+                {
+                    pk::mem_::secure_wipe(plaintext_stream.data(), plaintext_stream.size());
+                }
                 plaintext_stream = cipher->decrypt_chunk(buffer.data(), bytes_read, ad.data(), ad.size(), current_nonce, nonce_size);
                 plaintext_pos = 0;
                 chunk_index++;
@@ -416,7 +511,7 @@ namespace pk::crypto::am_i_evil
                     progress_cb(0, total_bytes, "Verifying chunk #" + std::to_string(chunk_index) + "...");
                 }
             }
-            catch (const std::exception &e)
+            catch (const std::exception &)
             {
                 rep.failed_chunk_index = chunk_index;
                 if (chunk_index == 0)
@@ -439,7 +534,17 @@ namespace pk::crypto::am_i_evil
             {
                 while (size > 0)
                 {
-                    std::size_t bytes_read = decompressor->read(ptr, size);
+                    std::size_t bytes_read = 0;
+                    try
+                    {
+                        bytes_read = decompressor->read(ptr, size);
+                    }
+                    catch (const std::exception &de)
+                    {
+                        rep.verdict = __vv_::stream_corrupted;
+                        rep.error_details = sanitize_log_text(de.what());
+                        throw;
+                    }
                     ptr += bytes_read;
                     size -= bytes_read;
                     if (size > 0)
@@ -473,7 +578,7 @@ namespace pk::crypto::am_i_evil
             read_from_stream(&total_origin_size, sizeof(total_origin_size));
             rep.dub = total_origin_size;
 
-            if (total_origin_size > total_bytes * 100 && total_origin_size > 1024ULL * 1024 * 1024)
+            if (total_bytes < (UINT64_MAX / 100ULL) && total_origin_size > total_bytes * 100 && total_origin_size > 1024ULL * 1024 * 1024)
             {
                 rep.verdict = __vv_::zipbomb_warning;
                 rep.error_details = "uncompressed size (" + format_bytes(total_origin_size) + ") exceeds archive on disk size by >100x (perhaps zipbomb?).";
@@ -546,7 +651,7 @@ namespace pk::crypto::am_i_evil
                 if (!pk::path::ok(pk::path::validate_archive_path(rel_path, norm_path)))
                 {
                     rep.verdict = __vv_::traversal_attack;
-                    rep.error_details = "malicious or illegal relative path detected: " + rel_path;
+                    rep.error_details = "malicious or illegal relative path detected: " + sanitize_log_text(rel_path, 256);
                     cleanup_sensitive();
                     return rep;
                 }
@@ -560,21 +665,28 @@ namespace pk::crypto::am_i_evil
                 read_from_stream(&is_dir, sizeof(is_dir));
                 uint64_t file_size = 0;
                 read_from_stream(&file_size, sizeof(file_size));
-                if (is_dir)
+                if (is_dir != 0)
                 {
+                    if (file_size != 0)
+                    {
+                        rep.verdict = __vv_::stream_corrupted;
+                        rep.error_details = "directory entry declares non-zero payload size.";
+                        cleanup_sensitive();
+                        return rep;
+                    }
                     rep.directories++;
                 }
                 else
                 {
                     rep.regular_files++;
+                    if (file_size > total_origin_size - accumulated_origin_bytes)
+                    {
+                        rep.verdict = __vv_::stream_corrupted;
+                        rep.error_details = "sum of entry file sizes exceeds declared total origin size.";
+                        cleanup_sensitive();
+                        return rep;
+                    }
                     accumulated_origin_bytes += file_size;
-                }
-                if (accumulated_origin_bytes > total_origin_size)
-                {
-                    rep.verdict = __vv_::stream_corrupted;
-                    rep.error_details = "sum of entry file sizes exceeds declared total origin size.";
-                    cleanup_sensitive();
-                    return rep;
                 }
                 if (rep.header.has_metadata)
                 {
@@ -591,7 +703,11 @@ namespace pk::crypto::am_i_evil
                     while (rem > 0)
                     {
                         if (cancel_cb && cancel_cb())
-                            throw std::runtime_error("verification cancelled by user.");
+                        {
+                            rep.verdict = __vv_::cancelled;
+                            rep.error_details = "verification cancelled by user.";
+                            throw std::runtime_error(rep.error_details);
+                        }
                         std::size_t to_drain = static_cast<std::size_t>(std::min<uint64_t>(rem, discard_buf.size()));
                         read_from_stream(discard_buf.data(), to_drain);
                         rem -= to_drain;
@@ -600,11 +716,49 @@ namespace pk::crypto::am_i_evil
                     }
                 }
             }
+            if (accumulated_origin_bytes != total_origin_size)
+            {
+                rep.verdict = __vv_::stream_corrupted;
+                rep.error_details = "sum of entry file sizes does not match declared total origin size.";
+                cleanup_sensitive();
+                return rep;
+            }
             rep.actual_uncompressed_bytes = accumulated_origin_bytes;
             rep.total_chunks = chunk_index;
             while (in && in.peek() != EOF)
             {
                 fetch_next_chunk();
+                if (decompressor && plaintext_pos < plaintext_stream.size())
+                {
+                    std::size_t avail = plaintext_stream.size() - plaintext_pos;
+                    decompressor->feed(plaintext_stream.data() + plaintext_pos, avail);
+                    plaintext_pos += avail;
+                }
+            }
+            if (decompressor)
+            {
+                if (plaintext_pos < plaintext_stream.size())
+                {
+                    std::size_t avail = plaintext_stream.size() - plaintext_pos;
+                    decompressor->feed(plaintext_stream.data() + plaintext_pos, avail);
+                    plaintext_pos += avail;
+                }
+                try
+                {
+                    decompressor->finish_chk();
+                }
+                catch (const std::exception &fe)
+                {
+                    rep.verdict = __vv_::stream_corrupted;
+                    rep.error_details = sanitize_log_text(fe.what());
+                    throw;
+                }
+            }
+            else if (plaintext_pos < plaintext_stream.size())
+            {
+                rep.verdict = __vv_::stream_corrupted;
+                rep.error_details = "unexpected trailing plaintext bytes after archive entries.";
+                throw std::runtime_error(rep.error_details);
             }
             rep.total_chunks = chunk_index;
             vsb = total_origin_size;
@@ -619,33 +773,60 @@ namespace pk::crypto::am_i_evil
         }
         catch (const std::exception &e)
         {
-            if (rep.verdict == __vv_::io_error)
+            std::string what_str = e.what();
+            if (rep.verdict == __vv_::cancelled || (cancel_cb && cancel_cb()) || what_str.find("cancelled") != std::string::npos)
             {
-                std::string what_str = e.what();
-                if (what_str.find("cancelled") != std::string::npos)
-                {
-                    rep.error_details = "verification cancelled by user.";
-                }
-                else
-                {
-                    rep.error_details = e.what();
-                }
+                rep.verdict = __vv_::cancelled;
+                rep.error_details = "verification cancelled by user.";
+            }
+            else if (rep.verdict == __vv_::io_error)
+            {
+                rep.error_details = sanitize_log_text(what_str);
             }
         }
-
         cleanup_sensitive();
         return rep;
     }
     std::string mk_export_log(const std::vector<verification_report> &reports)
     {
         std::ostringstream log;
-        time_t rawtime;
-        struct tm *timeinfo;
-        char timebuf[80];
-        time(&rawtime);
-        timeinfo = localtime(&rawtime);
-        strftime(timebuf, sizeof(timebuf), "%d. %B %Y, %H:%M", timeinfo);
-        log << "MAGE archive verification v0.7a (build " << __DATE__ << ")\n";
+        std::time_t rawtime = std::time(nullptr);
+        struct tm local_tm{};
+        struct tm utc_tm{};
+#ifdef _WIN32
+        localtime_s(&local_tm, &rawtime);
+        gmtime_s(&utc_tm, &rawtime);
+        constexpr const char *k_platform_name = "Windows";
+#else
+        localtime_r(&rawtime, &local_tm);
+        gmtime_r(&rawtime, &utc_tm);
+#if defined(__APPLE__)
+        constexpr const char *k_platform_name = "macOS (POSIX)";
+#elif defined(__linux__)
+        constexpr const char *k_platform_name = "Linux (POSIX)";
+#else
+        constexpr const char *k_platform_name = "POSIX";
+#endif
+#endif
+        int day_diff = 0;
+        if (local_tm.tm_year == utc_tm.tm_year)
+            day_diff = local_tm.tm_yday - utc_tm.tm_yday;
+        else if (local_tm.tm_year > utc_tm.tm_year)
+            day_diff = 1;
+        else
+            day_diff = -1;
+        const int offset_mins = day_diff * 24 * 60 + (local_tm.tm_hour * 60 + local_tm.tm_min) - (utc_tm.tm_hour * 60 + utc_tm.tm_min);
+        const char tz_sign = (offset_mins >= 0) ? '+' : '-';
+        const int abs_mins = std::abs(offset_mins);
+        const int tz_h = abs_mins / 60;
+        const int tz_m = abs_mins % 60;
+        static const char *const k_months[12] = {
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"};
+        const char *month_name = (local_tm.tm_mon >= 0 && local_tm.tm_mon < 12) ? k_months[local_tm.tm_mon] : "unknown";
+        char timebuf[128];
+        std::snprintf(timebuf, sizeof(timebuf), "%02d. %s %04d, %02d:%02d:%02d (UTC%c%02d:%02d)", local_tm.tm_mday, month_name, local_tm.tm_year + 1900, local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec, tz_sign, tz_h, tz_m);
+        log << "MAGE archive verification v0.7a (" << k_platform_name << ", build " << __DATE__ << ")\n";
         log << "Verification log file from " << timebuf << "\n\n";
         log << "[!] NOTICE\n";
         log << "    This diagnostic report discloses container geometry, cryptographic parameters,\n";
@@ -655,16 +836,20 @@ namespace pk::crypto::am_i_evil
         uint32_t header_warn = 0;
         uint32_t aead_verified = 0;
         uint32_t aead_failed = 0;
+        uint32_t aead_cancelled = 0;
         uint32_t aead_pending = 0;
         for (const auto &r : reports)
         {
-            if (r.header.valid_magic && r.header.kdf_safe && r.header.structure_ok)
+            const bool hdr_good = (r.header.file_exists && r.header.valid_magic && r.header.kdf_safe && r.header.structure_ok);
+            if (hdr_good)
                 header_ok++;
             else
                 header_warn++;
 
             if (r.verdict == __vv_::success)
                 aead_verified++;
+            else if (r.verdict == __vv_::cancelled)
+                aead_cancelled++;
             else if (r.verdict == __vv_::io_error && r.verified_chunks == 0 && r.error_details.empty())
                 aead_pending++;
             else
@@ -676,9 +861,14 @@ namespace pk::crypto::am_i_evil
             s << std::left << std::setw(38) << (field + ":") << val << "\n";
             return s.str();
         };
+        std::string aead_summary = std::to_string(aead_verified) + " OK, " + std::to_string(aead_failed) + " failed, " + std::to_string(aead_pending) + " pending";
+        if (aead_cancelled > 0)
+        {
+            aead_summary += ", " + std::to_string(aead_cancelled) + " cancelled";
+        }
         log << pad_field("Total archives in queue", std::to_string(total));
         log << pad_field("Header pre-checks", std::to_string(header_ok) + " OK, " + std::to_string(header_warn) + " warning / issues");
-        log << pad_field("AEAD integrity", std::to_string(aead_verified) + " OK, " + std::to_string(aead_failed) + " failed, " + std::to_string(aead_pending) + " pending");
+        log << pad_field("AEAD integrity", aead_summary);
         log << "\n";
         struct table_row_data
         {
@@ -702,7 +892,7 @@ namespace pk::crypto::am_i_evil
             const auto &r = reports[i];
             table_row_data row;
             row.item_str = std::to_string(i + 1);
-            row.size_str = format_bytes(r.header.file_size_bytes);
+            row.size_str = r.header.file_exists ? format_bytes(r.header.file_size_bytes) : "-";
             row.cipher_str = (!r.header.valid_magic || r.header.algo_name.empty()) ? "-" : r.header.algo_name;
             std::string comp_str = "-";
             if (r.header.valid_magic)
@@ -721,9 +911,11 @@ namespace pk::crypto::am_i_evil
                 }
             }
             row.comp_str = comp_str;
-            row.hdr_status = (r.header.valid_magic && r.header.structure_ok && r.header.kdf_safe) ? "OK" : "FAIL";
+            row.hdr_status = (r.header.file_exists && r.header.valid_magic && r.header.structure_ok && r.header.kdf_safe) ? "OK" : "FAIL";
             if (r.verdict == __vv_::success)
                 row.aead_status = "OK";
+            else if (r.verdict == __vv_::cancelled)
+                row.aead_status = "CANCELLED";
             else if (r.verdict == __vv_::io_error && r.verified_chunks == 0 && r.error_details.empty())
                 row.aead_status = "PENDING";
             else
@@ -769,14 +961,14 @@ namespace pk::crypto::am_i_evil
         for (std::size_t i = 0; i < reports.size(); ++i)
         {
             const auto &r = reports[i];
-            log << "Archive " << (i + 1) << ": " << pk::path::to_utf8(r.header.___filepath) << "\n";
+            log << "Archive " << (i + 1) << ": " << sanitize_log_text(pk::path::display_path_utf8(r.header.___filepath), 4096) << "\n";
             auto pad_item = [](const std::string &field, const std::string &val) -> std::string
             {
                 std::ostringstream s;
                 s << "     " << std::left << std::setw(33) << (field + ":") << val << "\n";
                 return s.str();
             };
-            log << pad_item("File size", numbers_with_commas_unlike_in_gta_5(r.header.file_size_bytes) + "B (" + format_bytes(r.header.file_size_bytes) + ")");
+            log << pad_item("File size", r.header.file_exists ? (numbers_with_commas_unlike_in_gta_5(r.header.file_size_bytes) + "B (" + format_bytes(r.header.file_size_bytes) + ")") : "-");
             log << pad_item("Format signature", r.header.valid_magic ? "MAGE (OK)" : "INVALID");
             log << pad_item("Format version", r.header.valid_magic ? std::to_string(static_cast<int>(r.header.version)) : "-");
             log << pad_item("Cipher algorithm", (!r.header.valid_magic || r.header.algo_name.empty()) ? "-" : r.header.algo_name);
@@ -805,24 +997,35 @@ namespace pk::crypto::am_i_evil
             }
             log << pad_item("Compression", comp_info);
             log << pad_item("Preserves metadata", !r.header.valid_magic ? "-" : (r.header.has_metadata ? "yes" : "no"));
-            log << pad_item("Chunk geometry", !r.header.valid_magic ? "-" : (format_bytes(r.header.chunk_size) + " (" + std::to_string(r.header.est_chunks) + " chunk" + (r.header.est_chunks == 1 ? "" : "s") + " estimated)"));
+            log << pad_item("Chunk geometry", (!r.header.valid_magic || r.header.chunk_size < 1024 * 1024 || r.header.chunk_size > 64 * 1024 * 1024) ? "-" : (format_bytes(r.header.chunk_size) + " (" + std::to_string(r.header.est_chunks) + " chunk" + (r.header.est_chunks == 1 ? "" : "s") + " estimated)"));
             std::string kdf_params = "memory: " + format_bytes(static_cast<uint64_t>(r.header.memory_cost_kb) * 1024) + ", passes: " + std::to_string(r.header.time_cost) + ", cores: " + std::to_string(r.header.parallelism);
             log << pad_item("KDF algorithm", !r.header.valid_magic ? "-" : "Argon2id");
             log << pad_item("KDF parameters", !r.header.valid_magic ? "-" : kdf_params);
-            log << pad_item("KDF DoS safety", !r.header.valid_magic ? "N/A" : (r.header.kdf_safe ? "OK (no limits exceeded)" : "FAIL (safety threshold exceeded)"));
-            log << pad_item("Container health", (r.header.structure_ok && r.header.valid_magic) ? "OK" : r.header.sanity_notes);
-            if (!r.header.valid_magic || !r.header.structure_ok || !r.header.kdf_safe)
+            log << pad_item("KDF DoS safety", (!r.header.file_exists || !r.header.valid_magic) ? "N/A" : (r.header.kdf_safe ? "OK (no limits exceeded)" : "FAIL (safety threshold exceeded)"));
+            log << pad_item("Container health", (r.header.file_exists && r.header.structure_ok && r.header.valid_magic) ? "OK" : sanitize_log_text(r.header.sanity_notes, 1024));
+            if (!r.header.file_exists || !r.header.valid_magic || !r.header.structure_ok || !r.header.kdf_safe)
                 has_errors = true;
             log << "\n";
             bool header_failed = (!r.header.file_exists || !r.header.valid_magic || !r.header.structure_ok || !r.header.kdf_safe);
             if (header_failed)
             {
-                std::string v_str = "FAIL (" + verdict_to_str(r.verdict == __vv_::io_error ? (r.header.kdf_safe ? __vv_::header_but_not_ok : __vv_::header_dos_trap) : r.verdict) + ")";
+                __vv_ eff_v = r.verdict;
+                if (eff_v == __vv_::io_error && r.header.file_exists)
+                {
+                    eff_v = r.header.kdf_safe ? __vv_::header_but_not_ok : __vv_::header_dos_trap;
+                }
+                std::string v_str = "FAIL (" + verdict_to_str(eff_v) + ")";
                 log << pad_item("Verdict", v_str);
                 log << pad_item("Chunks verified", "0 / 0");
-                log << pad_item("Failure reason", r.error_details.empty() ? r.header.sanity_notes : r.error_details);
+                log << pad_item("Failure reason", sanitize_log_text(r.error_details.empty() ? r.header.sanity_notes : r.error_details, 1024));
                 log << pad_item("Status", "FAIL (integrity check failed)");
                 has_errors = true;
+            }
+            else if (r.verdict == __vv_::cancelled)
+            {
+                log << pad_item("Verdict", "CANCELLED (" + verdict_to_str(r.verdict) + ")");
+                log << pad_item("Chunks verified", std::to_string(r.verified_chunks) + (r.header.est_chunks > 0 ? (" / ~" + std::to_string(r.header.est_chunks)) : ""));
+                log << pad_item("Status", "CANCELLED (aborted by user)");
             }
             else if (r.verdict != __vv_::io_error || r.verified_chunks > 0 || !r.error_details.empty())
             {
@@ -831,9 +1034,16 @@ namespace pk::crypto::am_i_evil
                     log << pad_item("Verdict", "OK (100% integrity)");
                     log << pad_item("Chunks verified", std::to_string(r.verified_chunks) + " / " + std::to_string(r.total_chunks));
                     log << pad_item("Declared original", numbers_with_commas_unlike_in_gta_5(r.dub) + "B (" + format_bytes(r.dub) + ")");
-                    char comp_buf[64];
-                    snprintf(comp_buf, sizeof(comp_buf), "%.1f%% (%.1f%% savings)", r.compression_ratio_percent, 100.0 - r.compression_ratio_percent);
-                    log << pad_item("Compression ratio", std::string(comp_buf));
+                    if (r.dub > 0)
+                    {
+                        char comp_buf[64];
+                        std::snprintf(comp_buf, sizeof(comp_buf), "%.1f%% (%.1f%% savings)", r.compression_ratio_percent, 100.0 - r.compression_ratio_percent);
+                        log << pad_item("Compression ratio", std::string(comp_buf));
+                    }
+                    else
+                    {
+                        log << pad_item("Compression ratio", "N/A (0B uncompressed)");
+                    }
                     log << pad_item("Payload entries", std::to_string(r.regular_files) + " files, " + std::to_string(r.directories) + " directories");
                     log << pad_item("Path traversal check", "OK (no path traversal detected)");
                     log << pad_item("Status", "OK (integrity passes)");
@@ -843,7 +1053,7 @@ namespace pk::crypto::am_i_evil
                     log << pad_item("Verdict", "FAIL (" + verdict_to_str(r.verdict) + ")");
                     log << pad_item("Chunks verified", std::to_string(r.verified_chunks) + " / " + std::to_string(r.total_chunks));
                     if (!r.error_details.empty())
-                        log << pad_item("Failure reason", r.error_details);
+                        log << pad_item("Failure reason", sanitize_log_text(r.error_details, 1024));
                     log << pad_item("Status", "FAIL (integrity check failed)");
                     has_errors = true;
                 }
@@ -863,6 +1073,10 @@ namespace pk::crypto::am_i_evil
         {
             log << "All archives verified successfully\nno errors occurred\n";
         }
+        else if (aead_cancelled > 0)
+        {
+            log << "Verification halted by user before completion\nno integrity errors detected in inspected data\n";
+        }
         else
         {
             log << "All container headers inspected successfully\nno errors occurred\n";
@@ -874,7 +1088,7 @@ namespace pk::crypto::am_i_evil
         char hash_str[crypto_hash_sha256_BYTES * 2 + 1];
         for (std::size_t i = 0; i < crypto_hash_sha256_BYTES; ++i)
         {
-            snprintf(&hash_str[i * 2], 3, "%02X", hash[i]);
+            std::snprintf(&hash_str[i * 2], 3, "%02X", hash[i]);
         }
         final_log += "==== Log checksum (SHA-256): " + std::string(hash_str) + " ====";
         return final_log;
