@@ -1,5 +1,5 @@
 // error_msg.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include "../.hpp/error_msg.hpp"
 namespace pk::error
 {
@@ -97,6 +97,18 @@ namespace pk::error
                 "Corrupted chunk",
                 "An archive data chunk is truncated, corrupted, or tampered with.",
                 "The archive failed integrity verification and cannot be extracted.",
+                what};
+        }
+        if (what.find("corrupted compressed stream") != std::string::npos ||
+            what.find("ZSTD decompression failed") != std::string::npos ||
+            what.find("LZMA decompression failed") != std::string::npos ||
+            what.find("LZMA dictionary exceeds") != std::string::npos ||
+            what.find("sum of entry file sizes") != std::string::npos)
+        {
+            return {
+                "Corrupted archive stream",
+                "The compressed payload stream inside the archive is malformed, truncated, or exceeds safety bounds.",
+                "Do not extract untrusted or damaged archives.",
                 what};
         }
         if (what.find("limit: 1,000,000") != std::string::npos || what.find("too many files") != std::string::npos)
