@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -7,12 +7,14 @@
 #include <cstring>
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include "../.hpp/path_handler.hpp"
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include <utime.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 #include "../.hpp/logger.hpp"
 namespace pk::crypto::format
@@ -32,16 +34,39 @@ namespace pk::crypto::format
         std::function<bool()> cancel_cb,
         std::function<void(uint64_t, uint64_t)> entry_cb)
     {
+        if (entries.size() > 1000000)
+            throw std::runtime_error("too many files to archive (limit: 1,000,000)");
+        if (chunk_size < 1024 * 1024 || chunk_size > 64 * 1024 * 1024)
+            throw std::runtime_error("invalid chunk size");
+
         uint64_t total_bytes = sizeof(uint64_t) + sizeof(uint32_t);
+        uint64_t total_origin_size = 0;
         for (const auto &e : entries)
         {
-            total_bytes += sizeof(uint16_t) + e.relative_path.size() + sizeof(uint8_t) + sizeof(e.file_size);
+            std::string norm_rel;
+            auto path_err = pk::path::validate_archive_path(e.relative_path, norm_rel);
+            if (!pk::path::ok(path_err) || e.relative_path.size() > std::numeric_limits<uint16_t>::max())
+            {
+                throw std::runtime_error("Invalid or malicious path in archive: " + pk::path::describe(path_err));
+            }
+            uint64_t entry_hdr_sz = sizeof(uint16_t) + e.relative_path.size() + sizeof(uint8_t) + sizeof(e.file_size);
             if (include_metadata)
             {
-                total_bytes += sizeof(e.ctime) + sizeof(e.atime) + sizeof(e.mtime) + sizeof(e.attrs);
+                entry_hdr_sz += sizeof(e.ctime) + sizeof(e.atime) + sizeof(e.mtime) + sizeof(e.attrs);
             }
+            if (entry_hdr_sz > std::numeric_limits<uint64_t>::max() - total_bytes)
+                throw std::runtime_error("archive payload size overflow");
+            total_bytes += entry_hdr_sz;
             if (!e.is_directory)
+            {
+                if (e.file_size > std::numeric_limits<uint64_t>::max() - total_bytes ||
+                    e.file_size > std::numeric_limits<uint64_t>::max() - total_origin_size)
+                {
+                    throw std::runtime_error("archive payload size overflow");
+                }
                 total_bytes += e.file_size;
+                total_origin_size += e.file_size;
+            }
         }
         uint64_t processed_bytes = 0;
         uint64_t completed_entries = 0;
@@ -49,10 +74,14 @@ namespace pk::crypto::format
         auto last_emit_time = std::chrono::steady_clock::now();
         std::string current_file;
         std::filesystem::path p_out(out_path);
+        if (pk::path::is_symlink_or_other_thingy_whatever(p_out))
+            throw std::runtime_error("security error -> output archive target is a symlink or reparse point");
         if (p_out.has_parent_path())
         {
             std::error_code ec;
             (void)pk::path::mk_dirs_safe(p_out.parent_path(), ec);
+            if (pk::path::is_symlink_or_other_thingy_whatever(p_out.parent_path()))
+                throw std::runtime_error("security error -> output directory is a symlink or reparse point");
         }
 #ifdef _WIN32
         std::ofstream out(pk::path::to_ext_path(out_path), std::ios::binary | std::ios::trunc);
@@ -79,6 +108,8 @@ namespace pk::crypto::format
                 }
             }
         } file_guard{out_path, op_success, out};
+        if (pk::path::is_symlink_or_other_thingy_whatever(p_out))
+            throw std::runtime_error("security error -> output archive target became a symlink or reparse point");
         auto salt_res = pk::crypto::kdf::mk_salt(16);
         if (!pk::crypto::kdf::ok(salt_res.second))
             throw std::runtime_error("salt generation failed");
@@ -190,6 +221,7 @@ namespace pk::crypto::format
                 if (!compressed.empty())
                 {
                     write_to_encrypt_buffer(compressed.data(), compressed.size());
+                    pk::mem_::secure_wipe(compressed.data(), compressed.size());
                 }
             }
             else
@@ -211,11 +243,6 @@ namespace pk::crypto::format
                 }
             }
         };
-        uint64_t total_origin_size = 0;
-        for (const auto &entry : entries)
-        {
-            total_origin_size += entry.file_size;
-        }
         write_stream(&total_origin_size, sizeof(total_origin_size));
         uint32_t num_entries = static_cast<uint32_t>(entries.size());
         write_stream(&num_entries, sizeof(num_entries));
@@ -239,8 +266,9 @@ namespace pk::crypto::format
             write_stream(&path_len, sizeof(path_len));
             write_stream(entry.relative_path.data(), path_len);
             uint8_t is_dir = entry.is_directory ? 1 : 0;
+            uint64_t eff_file_size = entry.is_directory ? 0ULL : entry.file_size;
             write_stream(&is_dir, sizeof(is_dir));
-            write_stream(&entry.file_size, sizeof(entry.file_size));
+            write_stream(&eff_file_size, sizeof(eff_file_size));
             // likewise; we permit only safe metadata
             if (header.has_metadata)
             {
@@ -249,7 +277,7 @@ namespace pk::crypto::format
                 write_stream(&entry.mtime, sizeof(entry.mtime));
                 write_stream(&entry.attrs, sizeof(entry.attrs));
             }
-            if (!entry.is_directory && entry.file_size > 0)
+            if (!entry.is_directory && eff_file_size > 0)
             {
 #ifdef _WIN32
                 std::ifstream in(pk::path::to_ext_path(entry.source_path), std::ios::binary);
@@ -257,7 +285,7 @@ namespace pk::crypto::format
                 std::ifstream in(entry.source_path, std::ios::binary);
 #endif
                 if (!in)
-                    throw std::runtime_error("failed to open input file: " + pk::path::to_utf8(entry.source_path));
+                    throw std::runtime_error("failed to open input file: " + pk::path::display_path_utf8(entry.source_path));
                 std::vector<char> file_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
                 struct file_buf_guard
                 {
@@ -271,7 +299,7 @@ namespace pk::crypto::format
                         }
                     }
                 } fb_guard{file_buf};
-                uint64_t remaining = entry.file_size;
+                uint64_t remaining = eff_file_size;
                 while (remaining > 0 && in)
                 {
                     if (cancel_cb && cancel_cb())
@@ -291,7 +319,7 @@ namespace pk::crypto::format
                 }
                 if (remaining > 0)
                 {
-                    throw std::runtime_error("failed to read complete file: " + pk::path::to_utf8(entry.source_path));
+                    throw std::runtime_error("failed to read complete file: " + pk::path::display_path_utf8(entry.source_path));
                 }
             }
             completed_entries++;
@@ -302,6 +330,7 @@ namespace pk::crypto::format
             if (!compressed.empty())
             {
                 write_to_encrypt_buffer(compressed.data(), compressed.size());
+                pk::mem_::secure_wipe(compressed.data(), compressed.size());
             }
         }
         flush_chunk();
@@ -328,11 +357,14 @@ namespace pk::crypto::format
         if (!pk::path::mk_dirs_safe(out_dir, ec_out))
             throw std::runtime_error("failed to create destination directory: " + ec_out.message());
         std::error_code ec_in_sz;
-        uint64_t total_bytes = std::filesystem::file_size(pk::path::to_ext_path(in_path), ec_in_sz);
+        auto ext_in = pk::path::to_ext_path(in_path);
+        if (!std::filesystem::is_regular_file(ext_in, ec_in_sz) || ec_in_sz)
+            throw std::runtime_error("failed to open input file");
+        uint64_t total_bytes = std::filesystem::file_size(ext_in, ec_in_sz);
         if (ec_in_sz)
             total_bytes = 0;
 #ifdef _WIN32
-        std::ifstream in(pk::path::to_ext_path(in_path), std::ios::binary);
+        std::ifstream in(ext_in, std::ios::binary);
 #else
         std::ifstream in(in_path, std::ios::binary);
 #endif
@@ -351,15 +383,19 @@ namespace pk::crypto::format
             throw std::runtime_error("corrupted or malicious archive -> unknown compression algorithm");
         bool has_meta = (header.has_metadata == 1);
         pk::crypto::kdf::kdf_cfg kdf_cfg{};
+        kdf_cfg.parallelism = header.parallelism;
+        if (kdf_cfg.parallelism < 1 || kdf_cfg.parallelism > 32)
+            throw std::runtime_error("corrupted or malicious archive -> invalid parallelism");
         kdf_cfg.memory_cost_kb = header.memory_cost_kb;
-        if (kdf_cfg.memory_cost_kb < 1024 || kdf_cfg.memory_cost_kb > 2097152)
+        if (kdf_cfg.memory_cost_kb < 1024 || kdf_cfg.memory_cost_kb > 2097152 ||
+            kdf_cfg.memory_cost_kb < static_cast<uint32_t>(8 * kdf_cfg.parallelism))
             throw std::runtime_error("corrupted or malicious archive -> excessive memory cost (limit: 2 GB)");
         kdf_cfg.time_cost = header.time_cost;
         if (kdf_cfg.time_cost < 1 || kdf_cfg.time_cost > 32)
             throw std::runtime_error("corrupted or malicious archive -> excessive time cost (limit: 32)");
-        kdf_cfg.parallelism = header.parallelism;
-        if (kdf_cfg.parallelism < 1 || kdf_cfg.parallelism > 32)
-            throw std::runtime_error("corrupted or malicious archive -> invalid parallelism");
+        std::size_t chunk_size = header.chunk_size_bytes;
+        if (chunk_size < 1024 * 1024 || chunk_size > 64 * 1024 * 1024)
+            throw std::runtime_error("corrupted archive -> invalid chunk size");
         kdf_cfg.hash_length = (header.algo == static_cast<uint8_t>(cipher::algorithm::aes_256_siv)) ? 64 : 32;
         if (status_cb)
             status_cb("Deriving encryption key...");
@@ -368,9 +404,6 @@ namespace pk::crypto::format
             throw std::runtime_error("key derivation failed");
         if (status_cb)
             status_cb("Extracting files...");
-        std::size_t chunk_size = header.chunk_size_bytes;
-        if (chunk_size < 1024 * 1024 || chunk_size > 64 * 1024 * 1024)
-            throw std::runtime_error("corrupted archive -> invalid chunk size");
         cipher::algorithm algo = static_cast<cipher::algorithm>(header.algo);
         auto cipher = cipher::mk_cipher(algo);
         cipher->init(key_res.first.data(), key_res.first.size());
@@ -378,11 +411,11 @@ namespace pk::crypto::format
         key_res.first.clear();
         std::size_t block_size = chunk_size + cipher->what_mac_size();
         std::vector<uint8_t> buffer(block_size);
-        std::vector<uint8_t> plaintext_stream;
+        pk::mem_::secure_vector plaintext_stream;
         struct unpack_buf_guard
         {
             std::vector<uint8_t> &b;
-            std::vector<uint8_t> &pt;
+            pk::mem_::secure_vector &pt;
             ~unpack_buf_guard()
             {
                 if (!b.empty())
@@ -428,7 +461,7 @@ namespace pk::crypto::format
                 ad[sizeof(header) + i] = static_cast<uint8_t>((chunk_index >> (i * 8)) & 0xFF);
             }
             auto pt = cipher->decrypt_chunk(buffer.data(), bytes_read, ad.data(), ad.size(), current_nonce, nonce_size);
-            plaintext_stream.assign(pt.begin(), pt.end());
+            plaintext_stream = std::move(pt);
             plaintext_pos = 0;
             chunk_index++;
         };
@@ -469,7 +502,7 @@ namespace pk::crypto::format
         };
         uint64_t total_origin_size = 0;
         read_from_stream(&total_origin_size, sizeof(total_origin_size));
-        if (total_origin_size > total_bytes * 100 && total_origin_size > 1024ULL * 1024 * 1024)
+        if (total_bytes < 184467440737095516ULL && total_origin_size > total_bytes * 100 && total_origin_size > 1024ULL * 1024 * 1024)
         {
             if (!zipbomb_cb || !zipbomb_cb())
             {
@@ -517,16 +550,28 @@ namespace pk::crypto::format
             read_from_stream(&path_len, sizeof(path_len));
             std::string rel_path(path_len, '\0');
             read_from_stream(rel_path.data(), path_len);
-            current_file = rel_path;
+            std::string norm_path;
+            if (!pk::path::ok(pk::path::validate_archive_path(rel_path, norm_path)))
+            {
+                throw std::runtime_error("Invalid or malicious path in archive: " + rel_path);
+            }
+            current_file = norm_path;
             emit_unpack_progress(false, i);
             uint8_t is_dir = 0;
             read_from_stream(&is_dir, sizeof(is_dir));
             uint64_t file_size = 0;
             read_from_stream(&file_size, sizeof(file_size));
-            aoz += file_size;
-            if (aoz > total_origin_size)
+            if (is_dir != 0 && file_size != 0)
             {
-                throw std::runtime_error("archive corruption or zipbomb bypass; entries size exceeds declared total size");
+                throw std::runtime_error("corrupted archive -> directory entry declares non-zero file size");
+            }
+            if (!is_dir)
+            {
+                if (file_size > total_origin_size - aoz)
+                {
+                    throw std::runtime_error("archive corruption or zipbomb bypass; entries size exceeds declared total size");
+                }
+                aoz += file_size;
             }
             uint64_t ctime = 0, atime = 0, mtime = 0;
             uint32_t attrs = 0;
@@ -537,53 +582,65 @@ namespace pk::crypto::format
                 read_from_stream(&mtime, sizeof(mtime));
                 read_from_stream(&attrs, sizeof(attrs));
             }
-            std::filesystem::path target_path;
-            std::error_code fs_error;
-            std::string norm_path;
             if (ext_behavior == 1)
             {
-                std::size_t pos = rel_path.find('/');
-                if (pos == std::string::npos)
-                    pos = rel_path.find('\\');
+                std::size_t pos = norm_path.find('/');
                 if (pos != std::string::npos)
                 {
-                    if (pos == rel_path.length() - 1)
-                    {
-                        continue;
-                    }
-                    rel_path = rel_path.substr(pos + 1);
+                    norm_path = norm_path.substr(pos + 1);
                 }
                 else if (is_dir)
                 {
                     continue;
                 }
-                if (rel_path.empty())
+                if (norm_path.empty())
                 {
+                    if (!is_dir && file_size > 0)
+                    {
+                        uint64_t rem_skip = file_size;
+                        std::vector<char> drain_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
+                        struct drain_guard
+                        {
+                            std::vector<char> &d;
+                            ~drain_guard()
+                            {
+                                if (!d.empty())
+                                    pk::mem_::secure_wipe(d.data(), d.size());
+                            }
+                        } dg{drain_buf};
+                        while (rem_skip > 0)
+                        {
+                            if (cancel_cb && cancel_cb())
+                                throw std::runtime_error("operation cancelled by user.");
+                            std::size_t n = static_cast<std::size_t>(std::min<uint64_t>(rem_skip, drain_buf.size()));
+                            read_from_stream(drain_buf.data(), n);
+                            rem_skip -= n;
+                            extracted_bytes += n;
+                        }
+                    }
                     continue;
                 }
             }
-            if (!pk::path::ok(pk::path::validate_archive_path(rel_path, norm_path)))
-            {
-                throw std::runtime_error("Invalid or malicious path in archive: " + rel_path);
-            }
+            std::filesystem::path target_path;
+            std::error_code fs_error;
             auto v_err = pk::path::resolve_out_path(out_dir, norm_path, target_path, fs_error);
             if (!pk::path::ok(v_err))
             {
                 if (v_err == pk::path::validation_error::path_conflict)
                 {
-                    throw std::runtime_error("path conflict: '" + rel_path + "' is blocked by an existing file.");
+                    throw std::runtime_error("path conflict: '" + norm_path + "' is blocked by an existing file.");
                 }
-                throw std::runtime_error("archive path escapes the output directory -> " + rel_path);
+                throw std::runtime_error("archive path escapes the output directory -> " + norm_path);
             }
             if (is_dir)
             {
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
                 {
-                    throw std::runtime_error("security error -> cannot create directory because a symlink or reparse point exists: " + rel_path);
+                    throw std::runtime_error("security error -> cannot create directory because a symlink or reparse point exists: " + norm_path);
                 }
                 if (std::filesystem::exists(pk::path::to_ext_path(target_path)) && !std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
                 {
-                    throw std::runtime_error("path conflict -> cannot create directory '" + rel_path + "' because a file with the same name exists.");
+                    throw std::runtime_error("path conflict -> cannot create directory '" + norm_path + "' because a file with the same name exists.");
                 }
                 std::error_code ec_mkdir;
                 if (!pk::path::mk_dirs_safe(target_path, ec_mkdir))
@@ -595,12 +652,12 @@ namespace pk::crypto::format
                 {
                     if (std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
                     {
-                        throw std::runtime_error("path conflict -> cannot create file '" + rel_path + "' because a directory with the same name exists.");
+                        throw std::runtime_error("path conflict -> cannot create file '" + norm_path + "' because a directory with the same name exists.");
                     }
                     int action = ext_overwrite;
                     if (action == 0 && overwrite_ask_cb)
                     {
-                        action = overwrite_ask_cb(pk::path::to_utf8(target_path));
+                        action = overwrite_ask_cb(pk::path::display_path_utf8(target_path));
                     }
                     if (action == 0)
                     {
@@ -610,6 +667,15 @@ namespace pk::crypto::format
                     {
                         uint64_t remaining = file_size;
                         std::vector<char> dummy(std::min(chunk_size, std::size_t(1024 * 1024)));
+                        struct skip_buf_guard
+                        {
+                            std::vector<char> &d;
+                            ~skip_buf_guard()
+                            {
+                                if (!d.empty())
+                                    pk::mem_::secure_wipe(d.data(), d.size());
+                            }
+                        } sb_guard{dummy};
                         while (remaining > 0)
                         {
                             if (cancel_cb && cancel_cb())
@@ -625,14 +691,14 @@ namespace pk::crypto::format
                 }
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
                 {
-                    throw std::runtime_error("security error -> target file is a symlink or reparse point; " + rel_path);
+                    throw std::runtime_error("security error -> target file is a symlink or reparse point; " + norm_path);
                 }
                 std::error_code ec_parent;
                 if (!pk::path::mk_dirs_safe(target_path.parent_path(), ec_parent))
                     throw std::runtime_error("failed to create destination directory: " + ec_parent.message());
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path.parent_path()))
                 {
-                    throw std::runtime_error("security error -> parent directory is a symlink or reparse point; " + rel_path);
+                    throw std::runtime_error("security error -> parent directory is a symlink or reparse point; " + norm_path);
                 }
 #ifdef _WIN32
                 std::ofstream out(pk::path::to_ext_path(target_path), std::ios::binary | std::ios::trunc);
@@ -640,13 +706,13 @@ namespace pk::crypto::format
                 std::ofstream out(target_path, std::ios::binary | std::ios::trunc);
 #endif
                 if (!out)
-                    throw std::runtime_error("failed to create output file: " + pk::path::to_utf8(target_path));
+                    throw std::runtime_error("failed to create output file: " + pk::path::display_path_utf8(target_path));
                 if (pk::path::is_symlink_or_other_thingy_whatever(target_path))
                 {
                     out.close();
                     std::error_code ec_rm;
                     pk::path::rfs___(target_path, ec_rm);
-                    throw std::runtime_error("security error -> target file is a symlink or reparse point after open; " + rel_path);
+                    throw std::runtime_error("security error -> target file is a symlink or reparse point after open; " + norm_path);
                 }
                 out.exceptions(std::ios::failbit | std::ios::badbit);
                 uint64_t remaining = file_size;
@@ -680,52 +746,117 @@ namespace pk::crypto::format
             if (has_meta)
             {
                 std::wstring wpath = pk::path::to_ext_win32_path(target_path);
-                HANDLE hFile = CreateFileW(wpath.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, is_dir ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL, NULL);
+                DWORD open_flags = FILE_FLAG_OPEN_REPARSE_POINT | (is_dir ? FILE_FLAG_BACKUP_SEMANTICS : FILE_ATTRIBUTE_NORMAL);
+                HANDLE hFile = CreateFileW(wpath.c_str(), FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, open_flags, NULL);
                 if (hFile != INVALID_HANDLE_VALUE)
                 {
-                    FILETIME ftc, fta, ftw;
-                    ftc.dwLowDateTime = (DWORD)(ctime & 0xFFFFFFFF);
-                    ftc.dwHighDateTime = (DWORD)(ctime >> 32);
-                    fta.dwLowDateTime = (DWORD)(atime & 0xFFFFFFFF);
-                    fta.dwHighDateTime = (DWORD)(atime >> 32);
-                    ftw.dwLowDateTime = (DWORD)(mtime & 0xFFFFFFFF);
-                    ftw.dwHighDateTime = (DWORD)(mtime >> 32);
-                    SetFileTime(hFile, &ftc, &fta, &ftw);
+                    BY_HANDLE_FILE_INFORMATION bhfi{};
+                    if (GetFileInformationByHandle(hFile, &bhfi) && (bhfi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+                    {
+                        FILETIME ftc, fta, ftw;
+                        ftc.dwLowDateTime = (DWORD)(ctime & 0xFFFFFFFF);
+                        ftc.dwHighDateTime = (DWORD)(ctime >> 32);
+                        fta.dwLowDateTime = (DWORD)(atime & 0xFFFFFFFF);
+                        fta.dwHighDateTime = (DWORD)(atime >> 32);
+                        ftw.dwLowDateTime = (DWORD)(mtime & 0xFFFFFFFF);
+                        ftw.dwHighDateTime = (DWORD)(mtime >> 32);
+                        SetFileTime(hFile, (ctime > 0 ? &ftc : nullptr), (atime > 0 ? &fta : nullptr), (mtime > 0 ? &ftw : nullptr));
+                    }
                     CloseHandle(hFile);
                 }
-                DWORD safe_attrs = attrs & ~(FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_TEMPORARY);
-                if (safe_attrs == 0)
+                if (!pk::path::is_symlink_or_other_thingy_whatever(target_path))
                 {
-                    safe_attrs = FILE_ATTRIBUTE_NORMAL;
+                    DWORD safe_attrs = attrs & (FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED);
+                    if (!is_dir)
+                    {
+                        if (safe_attrs == 0)
+                            safe_attrs = FILE_ATTRIBUTE_NORMAL;
+                        SetFileAttributesW(wpath.c_str(), safe_attrs);
+                    }
+                    else if (safe_attrs != 0)
+                    {
+                        SetFileAttributesW(wpath.c_str(), safe_attrs);
+                    }
                 }
-                SetFileAttributesW(wpath.c_str(), safe_attrs);
             }
 #else
             // random guy on an old ass forum said this shit works,
             // he better not be lyin'
-            if (has_meta)
+            if (has_meta && !pk::path::is_symlink_or_other_thingy_whatever(target_path))
             {
-                auto ft2unix = [](uint64_t ft) -> time_t
+                constexpr uint64_t k_win_epoch_diff = 116444736000000000ULL;
+                auto ft2timespec = [k_win_epoch_diff](uint64_t ft) -> struct timespec
                 {
-                    return static_cast<time_t>((ft - 116444736000000000ULL) / 10000000ULL);
+                    struct timespec ts{};
+                    if (ft == 0)
+                    {
+                        ts.tv_nsec = UTIME_OMIT;
+                        return ts;
+                    }
+                    if (ft < k_win_epoch_diff)
+                    {
+                        ts.tv_sec = 0;
+                        ts.tv_nsec = 0;
+                        return ts;
+                    }
+                    uint64_t diff = ft - k_win_epoch_diff;
+                    ts.tv_sec = static_cast<time_t>(diff / 10000000ULL);
+                    ts.tv_nsec = static_cast<long>((diff % 10000000ULL) * 100ULL);
+                    return ts;
                 };
-                struct utimbuf new_times;
-                new_times.actime = ft2unix(atime);
-                new_times.modtime = ft2unix(mtime);
-                utime(target_path.string().c_str(), &new_times);
-                if ((attrs & 1) || (attrs > 0xFF && !(attrs & 0222)))
+                struct timespec times[2] = {ft2timespec(atime), ft2timespec(mtime)};
+                utimensat(AT_FDCWD, target_path.c_str(), times, AT_SYMLINK_NOFOLLOW);
+                if (!is_dir && ((attrs & 1) || (attrs > 0xFF && !(attrs & 0222))))
                 {
-                    chmod(target_path.string().c_str(), 0444);
+                    int fd = ::open(target_path.c_str(), O_RDONLY
+#ifdef O_NOFOLLOW
+                                                             | O_NOFOLLOW
+#endif
+                    );
+                    if (fd >= 0)
+                    {
+                        (void)::fchmod(fd, 0444);
+                        ::close(fd);
+                    }
                 }
             }
 #endif
+        }
+        if (aoz != total_origin_size)
+        {
+            throw std::runtime_error("archive corruption -> sum of entry file sizes does not match declared total size");
+        }
+        while (in && in.peek() != EOF)
+        {
+            fetch_next_chunk();
+            if (decompressor && plaintext_pos < plaintext_stream.size())
+            {
+                std::size_t avail = plaintext_stream.size() - plaintext_pos;
+                decompressor->feed(plaintext_stream.data() + plaintext_pos, avail);
+                plaintext_pos += avail;
+            }
+        }
+        if (decompressor)
+        {
+            if (plaintext_pos < plaintext_stream.size())
+            {
+                std::size_t avail = plaintext_stream.size() - plaintext_pos;
+                decompressor->feed(plaintext_stream.data() + plaintext_pos, avail);
+                plaintext_pos += avail;
+            }
+            decompressor->finish_chk();
+        }
+        else if (plaintext_pos < plaintext_stream.size())
+        {
+            throw std::runtime_error("corrupted archive -> unexpected trailing plaintext bytes");
         }
         if (ext_behavior == 2)
         {
             std::filesystem::path archive_stem = in_path.stem();
             std::filesystem::path wrapper_dir = out_dir / archive_stem;
             std::error_code ec;
-            if (std::filesystem::exists(pk::path::to_ext_path(wrapper_dir), ec) &&
+            if (!pk::path::is_symlink_or_other_thingy_whatever(wrapper_dir) &&
+                std::filesystem::exists(pk::path::to_ext_path(wrapper_dir), ec) &&
                 std::filesystem::is_directory(pk::path::to_ext_path(wrapper_dir), ec))
             {
 #ifdef _WIN32
@@ -751,7 +882,8 @@ namespace pk::crypto::format
                         if (child_count == 1)
                         {
                             single_name = fdata.cFileName;
-                            single_is_dir = (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                            single_is_dir = (fdata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+                                            (fdata.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
                         }
                         else
                         {
@@ -764,7 +896,8 @@ namespace pk::crypto::format
                 {
                     std::filesystem::path single_dir = wrapper_dir / single_name;
                     std::filesystem::path dest_dir = out_dir / single_name;
-                    if (!std::filesystem::exists(pk::path::to_ext_path(dest_dir), ec))
+                    if (!pk::path::is_symlink_or_other_thingy_whatever(single_dir) &&
+                        !std::filesystem::exists(pk::path::to_ext_path(dest_dir), ec))
                     {
                         if (MoveFileExW(pk::path::to_ext_win32_path(single_dir).c_str(), pk::path::to_ext_win32_path(dest_dir).c_str(), 0))
                         {
@@ -778,7 +911,7 @@ namespace pk::crypto::format
                 {
                     sub_items.push_back(dir_entry);
                 }
-                if (sub_items.size() == 1 && sub_items[0].is_directory(ec))
+                if (sub_items.size() == 1 && !sub_items[0].is_symlink(ec) && sub_items[0].is_directory(ec))
                 {
                     std::filesystem::path single_dir = sub_items[0].path();
                     std::filesystem::path dest_dir = out_dir / single_dir.filename();
