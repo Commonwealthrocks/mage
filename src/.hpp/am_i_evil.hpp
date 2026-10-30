@@ -1,5 +1,5 @@
 // am_i_evil.hpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #pragma once
 #include <filesystem>
 #include <string>
@@ -43,6 +43,7 @@ namespace pk::crypto::am_i_evil
         stream_corrupted,
         zipbomb_warning,
         traversal_attack,
+        cancelled,
         io_error
     };
     struct verification_report
