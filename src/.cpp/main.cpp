@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -173,6 +173,11 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain("");
     app.setApplicationVersion("v0.7a");
     app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
+    // init nacl
+    if (sodium_init() < 0)
+    {
+        return 1;
+    }
     QStringList args = app.arguments();
     if (args.size() > 2 && (args[1] == "--encrypt" || args[1] == "--decrypt" || args[1] == "--verify"))
     {
@@ -184,11 +189,6 @@ int main(int argc, char *argv[])
     }
     pk::ipc::ipc_server ipc_srv;
     ipc_srv.start();
-    // init nacl
-    if (sodium_init() < 0)
-    {
-        return 1;
-    }
     app.installEventFilter(new scroll_filter(&app));
     app.installEventFilter(new pk::ui::shortcuts::shortcut_filter(&app));
     pk::ui::sfx::preload();
