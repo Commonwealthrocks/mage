@@ -1,5 +1,5 @@
 // path_handler.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include "../.hpp/path_handler.hpp"
 #include <algorithm>
 #include <array>
@@ -276,6 +276,32 @@ namespace pk::path
         return out;
 #else
         return p.string();
+#endif
+    }
+    std::string display_path_utf8(const std::filesystem::path &p)
+    {
+        if (p.empty())
+            return {};
+#ifdef _WIN32
+        std::wstring ws = p.native();
+        if (ws.rfind(L"\\\\?\\UNC\\", 0) == 0 || ws.rfind(L"\\\\?\\unc\\", 0) == 0)
+        {
+            ws = L"\\\\" + ws.substr(8);
+        }
+        else if (ws.rfind(L"\\\\?\\", 0) == 0)
+        {
+            ws = ws.substr(4);
+        }
+        for (auto &ch : ws)
+        {
+            if (ch == L'/')
+                ch = L'\\';
+        }
+        return to_utf8(std::filesystem::path(std::move(ws)));
+#else
+        std::filesystem::path norm = p;
+        norm.make_preferred();
+        return norm.string();
 #endif
     }
     validation_error validate_host_path(

@@ -1,5 +1,5 @@
-// path_handler.cpp
-// last updated: 29/10/2026
+// path_handler.hpp
+// last updated: 30/10/2026
 #pragma once
 #include <string>
 #include <string_view>
@@ -55,6 +55,7 @@ namespace pk::path
     [[nodiscard]] bool reserved_name(std::string_view segment) noexcept;
     [[nodiscard]] std::filesystem::path from_utf8(std::string_view s);
     [[nodiscard]] std::string to_utf8(const std::filesystem::path &p);
+    [[nodiscard]] std::string display_path_utf8(const std::filesystem::path &p);
     [[nodiscard]] std::filesystem::path weakly_canonical_safe(const std::filesystem::path &p, std::error_code &ec);
     [[nodiscard]] bool mk_dirs_safe(const std::filesystem::path &p, std::error_code &ec);
     bool rfs___(const std::filesystem::path &p, std::error_code &ec) noexcept;
