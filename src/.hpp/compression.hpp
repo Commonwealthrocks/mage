@@ -1,5 +1,5 @@
 // cmp_e.hpp
-// last updated: 27/06/2026
+// last updated: 30/10/2026
 #pragma once
 #include <vector>
 #include <cstdint>
@@ -25,6 +25,7 @@ namespace pk::crypto::cmp_e
         virtual ~stream_dcmp() = default;
         virtual void feed(const void *data, std::size_t size) = 0;
         virtual std::size_t read(void *out_data, std::size_t size) = 0;
+        virtual void finish_chk() = 0;
     };
     std::unique_ptr<stream_cmp> mk_cmp_e(algorithm algo, int level);
     std::unique_ptr<stream_dcmp> mk_dmp_e(algorithm algo);
