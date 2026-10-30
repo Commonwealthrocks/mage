@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -63,9 +63,130 @@
 #include <QUrl>
 #include <unordered_set>
 #include <algorithm>
+#include <fstream>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <cerrno>
+#endif
 #include "../.hpp/secure_memory.hpp"
 namespace pk::ui::outs
 {
+    static void wipe_qstring(QString &s)
+    {
+        if (s.isEmpty())
+            return;
+        if (s.isDetached())
+        {
+            pk::mem_::secure_wipe(
+                reinterpret_cast<void *>(const_cast<QChar *>(s.constData())),
+                static_cast<std::size_t>(s.size()) * sizeof(QChar));
+        }
+        else
+        {
+            pk::mem_::secure_wipe(
+                reinterpret_cast<void *>(s.data()),
+                static_cast<std::size_t>(s.size()) * sizeof(QChar));
+        }
+        s.clear();
+    }
+    static void wipe_line_edit(QLineEdit *le)
+    {
+        if (!le)
+            return;
+        QString orig = le->text();
+        if (!orig.isEmpty())
+        {
+            QString zeros(orig.size(), QChar(0));
+            le->setText(zeros);
+            le->clear();
+            wipe_qstring(orig);
+        }
+        else
+        {
+            le->clear();
+        }
+    }
+    static bool write_log___(const QString &save_path, std::string_view content, QString *err_out)
+    {
+        if (!valid_path_probable(save_path, err_out))
+            return false;
+        const std::filesystem::path fs_path = pk::path::from_utf8(save_path.toUtf8().toStdString());
+        if (pk::path::is_symlink_or_other_thingy_whatever(fs_path))
+        {
+            if (err_out)
+                *err_out = "Refusing to write log file through a symbolic link or reparse point.";
+            return false;
+        }
+        std::error_code ec;
+        const auto ext_p = pk::path::to_ext_path(fs_path);
+        if (std::filesystem::exists(ext_p, ec) && std::filesystem::is_directory(ext_p, ec))
+        {
+            if (err_out)
+                *err_out = "Target path is a directory, not a file.";
+            return false;
+        }
+#ifdef _WIN32
+        std::ofstream out(ext_p, std::ios::binary | std::ios::trunc);
+        if (!out)
+        {
+            if (err_out)
+                *err_out = QString("Could not open file for writing:\n%1").arg(save_path);
+            return false;
+        }
+        out.write(content.data(), static_cast<std::streamsize>(content.size()));
+        out.flush();
+        if (!out)
+        {
+            if (err_out)
+                *err_out = QString("Failed while writing log data to:\n%1").arg(save_path);
+            return false;
+        }
+        return true;
+#else
+        int flags = O_WRONLY | O_CREAT | O_TRUNC
+#ifdef O_NOFOLLOW
+                    | O_NOFOLLOW
+#endif
+#ifdef O_CLOEXEC
+                    | O_CLOEXEC
+#endif
+            ;
+        int fd = ::open(fs_path.c_str(), flags, S_IRUSR | S_IWUSR);
+        if (fd < 0)
+        {
+            if (err_out)
+                *err_out = QString("Could not open file for writing:\n%1").arg(save_path);
+            return false;
+        }
+        (void)::fchmod(fd, S_IRUSR | S_IWUSR);
+        const char *ptr = content.data();
+        std::size_t rem = content.size();
+        while (rem > 0)
+        {
+            ssize_t w = ::write(fd, ptr, rem);
+            if (w < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                ::close(fd);
+                if (err_out)
+                    *err_out = QString("Failed while writing log data to:\n%1").arg(save_path);
+                return false;
+            }
+            ptr += static_cast<std::size_t>(w);
+            rem -= static_cast<std::size_t>(w);
+        }
+        if (::close(fd) != 0)
+        {
+            if (err_out)
+                *err_out = QString("Failed to finalize log file:\n%1").arg(save_path);
+            return false;
+        }
+        return true;
+#endif
+    }
     static QString sexify_tooltip(const QString &raw)
     {
         QStringList lines = raw.trimmed().split('\n');
@@ -592,6 +713,11 @@ namespace pk::ui::outs
             m2_worker->requestInterruption();
             m2_worker->wait(500);
         }
+        for (auto &j : m_jobs)
+        {
+            wipe_qstring(j.password);
+        }
+        m_jobs.clear();
     }
     int cd_prog_dialog::exec()
     {
@@ -934,7 +1060,7 @@ namespace pk::ui::outs
             if (m2_worker->isRunning())
             {
                 m2_worker->requestInterruption();
-                if (!m2_worker->wait(150))
+                if (!m2_worker->wait(300))
                 {
                     m2_worker->terminate();
                     m2_worker->wait(500);
@@ -1110,7 +1236,6 @@ namespace pk::ui::outs
         int m = (secs % 3600) / 60;
         int s = secs % 60;
         lbl_elapsed->setText(QString("%1:%2:%3").arg(h, 2, 10, QChar('0')).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0')));
-
         if (is_scanning)
         {
             uint64_t items_delta = (scan_files_found >= last_scan_files) ? (scan_files_found - last_scan_files) : 0;
@@ -1124,7 +1249,6 @@ namespace pk::ui::outs
             lbl_file_count->setText(QString("%1 discovered").arg(commas(scan_files_found)));
             return;
         }
-
         if (is_kdf)
         {
             if (bm)
@@ -1157,7 +1281,6 @@ namespace pk::ui::outs
                 lbl_file_count->setText("1 of 1");
             return;
         }
-
         uint64_t bytes_delta = (current_proc >= last_processed) ? (current_proc - last_processed) : 0;
         last_processed = current_proc;
         double inst_speed = static_cast<double>(bytes_delta) / dt_sec;
@@ -1165,21 +1288,18 @@ namespace pk::ui::outs
             ewma_speed = (ewma_speed <= 0.0) ? inst_speed : (0.35 * inst_speed + 0.65 * ewma_speed);
         else if (ewma_speed > 0.0)
             ewma_speed *= 0.80;
-
         if (ewma_speed >= 1.0)
             lbl_sped->setText(format_speed(ewma_speed));
         else if (done_files_count > 0)
             lbl_sped->setText("Processing...");
         else
             lbl_sped->setText("-");
-
         if (tot_bytes > 0)
             lbl_proc->setText(format_size(current_proc) + " / " + format_size(tot_bytes));
         else if (current_proc > 0)
             lbl_proc->setText(format_size(current_proc));
         else
             lbl_proc->setText("0B / 0B");
-
         if (current_pct >= 100)
         {
             lbl_eta->setText("Quick, wasn't it?");
@@ -1216,7 +1336,6 @@ namespace pk::ui::outs
                 lbl_eta->setText("Calculating...");
             }
         }
-
         if (bm && m_jobs.size() > 1)
         {
             int cur_arch = std::min(curr_job_idx + 1, static_cast<int>(m_jobs.size()));
@@ -1240,12 +1359,13 @@ namespace pk::ui::outs
         {
             if (curr_job_idx < m_jobs.size())
             {
-                const auto &job = m_jobs[curr_job_idx];
+                auto &job = m_jobs[curr_job_idx];
                 pk::crypto::am_i_evil::verification_report rep;
                 if (m2_worker)
                     rep = m2_worker->what_report();
                 job_res__.append({job.list_index, job.archive_path, job.display_name, true, "", false, rep});
                 batch_done_weight += job.job_weight;
+                wipe_qstring(job.password);
             }
             if (m2_worker)
             {
@@ -1295,6 +1415,7 @@ namespace pk::ui::outs
                 }
                 if (!is_cancel)
                     batch_done_weight += m_jobs[curr_job_idx].job_weight;
+                wipe_qstring(m_jobs[curr_job_idx].password);
             }
             if (m2_worker)
             {
@@ -1875,30 +1996,16 @@ namespace pk::ui::outs
     }
     cd_mk_archive::~cd_mk_archive()
     {
-        if (password_v && !password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
     }
     void cd_mk_archive::on_cancel()
     {
-        if (password_v && !password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
         reject();
     }
     void custom_entropy::wipe()
     {
-        if (!password.isEmpty())
-        {
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(password.data())), password.size() * sizeof(QChar));
-            password.clear();
-        }
+        wipe_qstring(password);
         has_password = false;
         keyfile_path.clear();
         has_keyfile = false;
@@ -2118,6 +2225,7 @@ namespace pk::ui::outs
             m_tab_uis[i].chk_custom_kf->setChecked(kf_checked);
             m_tab_uis[i].txt_kf->setText(kf_text);
         }
+        wipe_qstring(pwd_text);
         pk::ui::sfx::play_info();
     }
     void cd_gib_entropy::on_save()
@@ -2144,12 +2252,7 @@ namespace pk::ui::outs
     {
         for (auto &ui : m_tab_uis)
         {
-            if (ui.txt_pwd && !ui.txt_pwd->text().isEmpty())
-            {
-                QString s = ui.txt_pwd->text();
-                pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-                ui.txt_pwd->clear();
-            }
+            wipe_line_edit(ui.txt_pwd);
         }
         for (auto &r : m_results)
         {
@@ -2171,12 +2274,7 @@ namespace pk::ui::outs
     }
     cd_decrypt_archive::~cd_decrypt_archive()
     {
-        if (password_v && !password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
         for (auto &ce : __custom_entropy_)
             ce.wipe();
         __custom_entropy_.clear();
@@ -2442,7 +2540,6 @@ namespace pk::ui::outs
                 QString p = targets[i].first;
                 if (__custom_entropy_.contains(p))
                     __custom_entropy_[p].wipe();
-
                 if (results[i].has_any())
                     __custom_entropy_[p] = results[i];
                 else
@@ -2454,6 +2551,8 @@ namespace pk::ui::outs
                 refresh_item_display(item, p);
             }
         }
+        for (auto &t : targets)
+            t.second.wipe();
     }
     void cd_decrypt_archive::on_rm_cp()
     {
@@ -2463,11 +2562,7 @@ namespace pk::ui::outs
             if (__custom_entropy_.contains(p))
             {
                 auto &ce = __custom_entropy_[p];
-                if (!ce.password.isEmpty())
-                {
-                    pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(ce.password.data())), ce.password.size() * sizeof(QChar));
-                    ce.password.clear();
-                }
+                wipe_qstring(ce.password);
                 ce.has_password = false;
                 if (!ce.has_any())
                     __custom_entropy_.remove(p);
@@ -2622,6 +2717,11 @@ namespace pk::ui::outs
         {
             cd_prog_dialog pd(jobs, this);
             pd.exec();
+            for (auto &jb : jobs)
+            {
+                wipe_qstring(jb.password);
+            }
+            jobs.clear();
             for (const auto &r : pd.results())
             {
                 if (r.success)
@@ -2713,12 +2813,7 @@ namespace pk::ui::outs
         }
         if (failed_names.isEmpty())
         {
-            if (!password_v->text().isEmpty())
-            {
-                QString s = password_v->text();
-                pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-                password_v->clear();
-            }
+            wipe_line_edit(password_v);
             for (auto &ce : __custom_entropy_)
                 ce.wipe();
             __custom_entropy_.clear();
@@ -2727,12 +2822,7 @@ namespace pk::ui::outs
     }
     void cd_decrypt_archive::on_cancel()
     {
-        if (!password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
         for (auto &ce : __custom_entropy_)
             ce.wipe();
         __custom_entropy_.clear();
@@ -2756,12 +2846,7 @@ namespace pk::ui::outs
     }
     cd_am_i_evil::~cd_am_i_evil()
     {
-        if (password_v && !password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
         for (auto &ce : __custom_entropy_)
             ce.wipe();
         __custom_entropy_.clear();
@@ -3185,6 +3270,8 @@ namespace pk::ui::outs
             refresh_properties();
             adjust_qc();
         }
+        for (auto &t : targets)
+            t.second.wipe();
     }
     void cd_am_i_evil::on_rm_cp()
     {
@@ -3194,11 +3281,7 @@ namespace pk::ui::outs
             if (__custom_entropy_.contains(p))
             {
                 auto &ce = __custom_entropy_[p];
-                if (!ce.password.isEmpty())
-                {
-                    pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(ce.password.data())), ce.password.size() * sizeof(QChar));
-                    ce.password.clear();
-                }
+                wipe_qstring(ce.password);
                 ce.has_password = false;
                 if (!ce.has_any())
                     __custom_entropy_.remove(p);
@@ -3260,6 +3343,7 @@ namespace pk::ui::outs
         int headers_warnings = 0;
         int aead_verified = 0;
         int aead_failed = 0;
+        int aead_cancelled = 0;
         int aead_pending = 0;
         for (const auto &rep : m_reports)
         {
@@ -3270,13 +3354,18 @@ namespace pk::ui::outs
 
             if (rep.verdict == pk::crypto::am_i_evil::__vv_::success)
                 ++aead_verified;
+            else if (rep.verdict == pk::crypto::am_i_evil::__vv_::cancelled)
+                ++aead_cancelled;
             else if (rep.verdict == pk::crypto::am_i_evil::__vv_::io_error && rep.verified_chunks == 0 && rep.error_details.empty())
                 ++aead_pending;
             else
                 ++aead_failed;
         }
+        QString aead_txt = QString("%1 verified, %2 failed, %3 pending").arg(aead_verified).arg(aead_failed).arg(aead_pending);
+        if (aead_cancelled > 0)
+            aead_txt += QString(", %1 cancelled").arg(aead_cancelled);
         lbl_queue_summary->setText(
-            QString("Queue: %1 archive(s) | Headers: %2 valid, %3 warning(s) | AEAD: %4 verified, %5 failed, %6 pending").arg(total).arg(headers_valid).arg(headers_warnings).arg(aead_verified).arg(aead_failed).arg(aead_pending));
+            QString("Queue: %1 archive(s) | Headers: %2 valid, %3 warning(s) | AEAD: %4").arg(total).arg(headers_valid).arg(headers_warnings).arg(aead_txt));
     }
     void cd_am_i_evil::refresh_properties()
     {
@@ -3288,7 +3377,7 @@ namespace pk::ui::outs
             return;
         }
         const auto &rep = m_reports[row];
-        txt_current_path->setText(QString::fromStdString(pk::path::to_utf8(rep.header.___filepath)));
+        txt_current_path->setText(QString::fromStdString(pk::path::display_path_utf8(rep.header.___filepath)));
         pt->clear();
         auto add_category = [this](const QString &title) -> QTreeWidgetItem *
         {
@@ -3316,11 +3405,11 @@ namespace pk::ui::outs
             return item;
         };
         QTreeWidgetItem *cat_geom = add_category("Container geometry");
-        add_prop(cat_geom, "On disk file size", QString("%1 (%2)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(rep.header.file_size_bytes) + "B")).arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.file_size_bytes))));
+        add_prop(cat_geom, "On disk file size", rep.header.file_exists ? QString("%1 (%2)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(rep.header.file_size_bytes) + "B")).arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.file_size_bytes))) : "-");
         add_prop(cat_geom, "Format signature", rep.header.valid_magic ? "MAGE (valid magic)" : "invalid signature", rep.header.valid_magic ? QColor(0x55, 0xff, 0x55) : QColor(0xff, 0x55, 0x55));
         add_prop(cat_geom, "Format version", rep.header.valid_magic ? QString("v%1").arg(static_cast<int>(rep.header.version)) : "-");
-        add_prop(cat_geom, "Payload chunk size", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)) : "-");
-        add_prop(cat_geom, "Estimated chunks", rep.header.valid_magic ? QString::number(rep.header.est_chunks) : "-");
+        add_prop(cat_geom, "Payload chunk size", (rep.header.valid_magic && rep.header.chunk_size >= 1024 * 1024 && rep.header.chunk_size <= 64 * 1024 * 1024) ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)) : "-");
+        add_prop(cat_geom, "Estimated chunks", (rep.header.valid_magic && rep.header.est_chunks > 0) ? QString::number(rep.header.est_chunks) : "-");
         QTreeWidgetItem *cat_crypto = add_category("Cryptographic parameters");
         add_prop(cat_crypto, "Cipher algorithm", rep.header.valid_magic ? QString::fromStdString(rep.header.algo_name) : "-");
         add_prop(cat_crypto, "Argon2id memory cost", rep.header.valid_magic ? QString::fromStdString(pk::crypto::am_i_evil::format_bytes(static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024)) : "-");
@@ -3409,11 +3498,15 @@ namespace pk::ui::outs
             else
                 diag_notes << QString("(X) Chunk geometry: %1 (out of bounds, 1MB - 64MBs required).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.header.chunk_size)));
             uint64_t mem_bytes = static_cast<uint64_t>(rep.header.memory_cost_kb) * 1024;
-            if (rep.header.memory_cost_kb <= 2 * 1024 * 1024)
+            if (rep.header.memory_cost_kb < 1024 || (rep.header.parallelism >= 1 && rep.header.memory_cost_kb < 8ULL * rep.header.parallelism))
+                diag_notes << QString("(X) Argon2id memory cost: %1 (below minimum 1MB / 8KB-per-lane requirement).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
+            else if (rep.header.memory_cost_kb <= 2 * 1024 * 1024)
                 diag_notes << QString("(OK) Argon2id memory cost: %1 (within 2GBs safety limit).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
             else
                 diag_notes << QString("(X) Argon2id memory cost: %1 (exceeds 2GBs safety threshold).").arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(mem_bytes)));
-            if (rep.header.time_cost >= 1 && rep.header.time_cost <= 32)
+            if (rep.header.time_cost < 1)
+                diag_notes << QString("(X) Argon2id time cost: %1 pass(es) (minimum 1 pass required).").arg(rep.header.time_cost);
+            else if (rep.header.time_cost <= 32)
                 diag_notes << QString("(OK) Argon2id time cost: %1 pass(es) (within 32 passes limit).").arg(rep.header.time_cost);
             else
                 diag_notes << QString("(X) Argon2id time cost: %1 pass(es) (exceeds 32 passes limit).").arg(rep.header.time_cost);
@@ -3427,7 +3520,7 @@ namespace pk::ui::outs
             else
                 diag_notes << QString("(X) Container health: %1.").arg(QString::fromStdString(rep.header.sanity_notes));
         }
-        bool is_healthy = (rep.header.valid_magic && rep.header.structure_ok && rep.header.kdf_safe);
+        bool is_healthy = (rep.header.file_exists && rep.header.valid_magic && rep.header.structure_ok && rep.header.kdf_safe);
         QColor diag_color = is_healthy ? QColor(0xa0, 0xa0, 0xa0) : QColor(0xe5, 0xc0, 0x7b);
         add_prop(cat_health, "Diagnostics / notes", "hover over to see...", diag_color, diag_notes.join("\n"));
         QTreeWidgetItem *cat_aead = add_category("Cryptographic status");
@@ -3435,6 +3528,11 @@ namespace pk::ui::outs
         if (is_pending)
         {
             add_prop(cat_aead, "Audit status", "pending (enter password / keyfile)", QColor(0xaa, 0xaa, 0xaa));
+        }
+        else if (rep.verdict == pk::crypto::am_i_evil::__vv_::cancelled)
+        {
+            add_prop(cat_aead, "Verification verdict", QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict)), QColor(0xe5, 0xc0, 0x7b));
+            add_prop(cat_aead, "AEAD chunks authenticated", QString("%1 / %2").arg(rep.verified_chunks).arg(rep.total_chunks));
         }
         else
         {
@@ -3445,7 +3543,14 @@ namespace pk::ui::outs
             if (rep.verdict == pk::crypto::am_i_evil::__vv_::success)
             {
                 add_prop(cat_aead, "Declared original size", QString("%1 (%2)").arg(QString::fromStdString(pk::crypto::am_i_evil::numbers_with_commas_unlike_in_gta_5(rep.dub) + "B")).arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub))));
-                add_prop(cat_aead, "Compression ratio", QString("%1% (%2% saved)").arg(QString::number(rep.compression_ratio_percent, 'f', 1)).arg(QString::number(100.0 - rep.compression_ratio_percent, 'f', 1)));
+                if (rep.dub > 0)
+                {
+                    add_prop(cat_aead, "Compression ratio", QString("%1% (%2% saved)").arg(QString::number(rep.compression_ratio_percent, 'f', 1)).arg(QString::number(100.0 - rep.compression_ratio_percent, 'f', 1)));
+                }
+                else
+                {
+                    add_prop(cat_aead, "Compression ratio", "N/A (0B uncompressed)");
+                }
                 add_prop(cat_aead, "Contained archive entries", QString("%1 regular file(s), %2 folder(s)").arg(rep.regular_files).arg(rep.directories));
                 add_prop(cat_aead, "Path traversal check", "OK", QColor(0x55, 0xff, 0x55));
             }
@@ -3523,6 +3628,11 @@ namespace pk::ui::outs
         {
             cd_prog_dialog pd(jobs, this);
             pd.exec();
+            for (auto &jb : jobs)
+            {
+                wipe_qstring(jb.password);
+            }
+            jobs.clear();
             for (const auto &res : pd.results())
             {
                 int i = res.list_index;
@@ -3540,17 +3650,18 @@ namespace pk::ui::outs
                         tree_item->setToolTip(2, QString("authentic n' verified (OK)\n%1 / %2 chunks verified").arg(rep.verified_chunks).arg(rep.total_chunks));
                         tree_item->setForeground(2, QColor(0x55, 0xff, 0x55));
                     }
+                    QString cmp_pct_str = rep.dub > 0 ? (QString::number(rep.compression_ratio_percent, 'f', 1) + "%") : QString("N/A");
                     QString msg = QString(">> %1:\n"
                                           "   - Status: %2\n"
                                           "   - AEAD chunks: %3 / %4 verified\n"
-                                          "   - Uncompressed: %5 (compression: %6%)\n"
+                                          "   - Uncompressed: %5 (compression: %6)\n"
                                           "   - Entries: %7 file(s), %8 folder(s)")
                                       .arg(base_name)
                                       .arg(QString::fromStdString(pk::crypto::am_i_evil::verdict_to_str(rep.verdict)))
                                       .arg(rep.verified_chunks)
                                       .arg(rep.total_chunks)
                                       .arg(QString::fromStdString(pk::crypto::am_i_evil::format_bytes(rep.dub)))
-                                      .arg(QString::number(rep.compression_ratio_percent, 'f', 1))
+                                      .arg(cmp_pct_str)
                                       .arg(rep.regular_files)
                                       .arg(rep.directories);
                     passed_reports.append(msg);
@@ -3560,13 +3671,18 @@ namespace pk::ui::outs
                     if (res.cancelled)
                     {
                         cancelled_count++;
+                        if (res.report.header.file_exists)
+                        {
+                            rep = res.report;
+                        }
+                        rep.verdict = pk::crypto::am_i_evil::__vv_::cancelled;
+                        rep.error_details = "Verification cancelled by user.";
                         if (tree_item)
                         {
                             tree_item->setText(2, "CANCELLED");
                             tree_item->setToolTip(2, "Verification cancelled by user");
                             tree_item->setForeground(2, QColor(0xe5, 0xc0, 0x7b));
                         }
-                        rep.error_details = "Verification cancelled by user.";
                         failed_reports.append(QString(">> %1:\n   - Verification cancelled").arg(base_name));
                     }
                     else
@@ -3641,26 +3757,19 @@ namespace pk::ui::outs
         QString save_path = QFileDialog::getSaveFileName(this, "Export verification log", "mage_verification_report.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
         if (save_path.isEmpty())
             return;
+        save_path = QDir::toNativeSeparators(save_path.trimmed());
         std::string log_content = pk::crypto::am_i_evil::mk_export_log(m_reports);
-        QFile file(save_path);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        QString err_msg;
+        if (!write_log___(save_path, log_content, &err_msg))
         {
-            error(this, "File write error", QString("Could not open file for writing:\n%1").arg(save_path));
+            error(this, "File write error", err_msg);
             return;
         }
-        QTextStream out(&file);
-        out << QString::fromStdString(log_content);
-        file.close();
         info(this, "Log exported", QString("Verification log successfully saved to:\n%1").arg(save_path));
     }
     void cd_am_i_evil::on_close()
     {
-        if (!password_v->text().isEmpty())
-        {
-            QString s = password_v->text();
-            pk::mem_::secure_wipe(reinterpret_cast<void *>(const_cast<QChar *>(s.data())), s.size() * sizeof(QChar));
-            password_v->clear();
-        }
+        wipe_line_edit(password_v);
         keyfile_path_v->clear();
         for (auto &ce : __custom_entropy_)
             ce.wipe();
@@ -4070,7 +4179,7 @@ namespace pk::ui::outs
         line1->setFrameShadow(QFrame::Sunken);
         layout->addWidget(line1);
         QLabel *lbl_info = new QLabel(
-            "Version: v0.6a\n"
+            "Version: v0.7a\n"
             "Build: " __DATE__ " " __TIME__ "\n\n"
             "Made by: Common, just Common.\n"
             "Audited by: no one. ",
@@ -4187,20 +4296,29 @@ namespace pk::ui::outs
             QString path = QFileDialog::getSaveFileName(cd_int_c, "Export log", "mage_internal.log", "Log files (*.log);; Text files (*.txt);; All files (*.*)");
             if (!path.isEmpty())
             {
-                QFile f(path);
-                if (f.open(QIODevice::WriteOnly | QIODevice::Text))
+                path = QDir::toNativeSeparators(path.trimmed());
+                QByteArray utf8_log = text_edit->toPlainText().toUtf8();
+                QString err_msg;
+                if (write_log___(path, std::string_view(utf8_log.constData(), static_cast<std::size_t>(utf8_log.size())), &err_msg))
                 {
-                    f.write(text_edit->toPlainText().toUtf8());
-                    f.close();
                     pk::ui::outs::info(cd_int_c, "OK", QString("Log successfully exported to:\n%1").arg(path));
                 }
+                else
+                {
+                    pk::ui::outs::error(cd_int_c, "File write error", err_msg);
+                }
             } });
-        pk::core::logger::instance().set_callback([text_edit, format_log_line](const std::string &msg)
+        QPointer<QTextEdit> safe_te(text_edit);
+        pk::core::logger::instance().set_callback([safe_te, format_log_line](const std::string &msg)
                                                   {
+            if (!safe_te)
+                return;
             QString qmsg = QString::fromStdString(msg);
-            QMetaObject::invokeMethod(text_edit, [text_edit, qmsg, format_log_line]() {
-                text_edit->append(format_log_line(qmsg));
-                text_edit->moveCursor(QTextCursor::End);
+            QMetaObject::invokeMethod(safe_te.data(), [safe_te, qmsg, format_log_line]() {
+                if (!safe_te)
+                    return;
+                safe_te->append(format_log_line(qmsg));
+                safe_te->moveCursor(QTextCursor::End);
             }, Qt::QueuedConnection); });
 
         cd_int_c->show();
