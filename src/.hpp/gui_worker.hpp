@@ -1,5 +1,5 @@
 // gui_worker.hpp
-// last updated: 29/10/2026
+// last updated: 30/10/2026
 #pragma once
 #include <QThread>
 #include <QString>
@@ -7,6 +7,7 @@
 #include <string>
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/am_i_evil.hpp"
+#include "../.hpp/secure_memory.hpp"
 namespace pk::ui::worker
 {
     class crypto_worker : public QThread
@@ -20,7 +21,7 @@ namespace pk::ui::worker
             am_i_evil
         };
         explicit crypto_worker(mode m, QObject *parent = nullptr);
-        ~crypto_worker() override = default;
+        ~crypto_worker() override;
         mode what_mode() const { return __mode; }
         const std::string &what_out_path() const { return output_path; }
         const pk::crypto::am_i_evil::verification_report &what_report() const { return verify_rep; }
@@ -66,7 +67,7 @@ namespace pk::ui::worker
         mode __mode;
         std::vector<std::string> roots_f_rooted;
         std::string output_path;
-        std::string password;
+        pk::mem_::secure_string password;
         std::string keyfile_path;
         pk::crypto::cipher::algorithm algo;
         pk::crypto::kdf::kdf_cfg __kdf_cfg;
