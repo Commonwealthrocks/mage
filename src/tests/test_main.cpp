@@ -129,8 +129,10 @@ int main()
     std::cout << "MAGE test suite n' security verification v0.7a (" << k_platform_name << ", build " << __DATE__ << ")\n";
     std::cout << "Test execution log from " << timebuf << "\n\n";
     std::cout << "[!] NOTICE\n";
-    std::cout << "    Test suite executes native cryptography, format geometry, Zip Slip defenses,\n";
-    std::cout << "    and 100,000 in-process parser mutations without mock abstractions.\n\n";
+    std::cout << "    Test suite executes native cryptography, format geometry, zip slip defenses,\n";
+    std::cout << "    and 100,000 in-process parser mutations without mock abstractions.\n";
+    std::cout << "    These tests do not rule out these attacks for MAGE; it only proves\n";
+    std::cout << "    that MAGE's parsers and format is safe from them on paper.\n\n";
     auto pad_field = [](const std::string &field, const std::string &val) -> std::string
     {
         std::ostringstream s;
@@ -148,8 +150,8 @@ int main()
     }
     std::cout << pad_field("Total test cases in queue", std::to_string(total_cases));
     std::cout << pad_field("Cryptographic algorithm modules", "3 (AES-GCM, XChaCha20, AES-SIV)");
-    std::cout << pad_field("Tamper & negative test vectors", "5");
-    std::cout << pad_field("Zip Slip & path traversal vectors", "5 (22 rules verified)");
+    std::cout << pad_field("Tamper n' negative test vectors", "5");
+    std::cout << pad_field("Zip slip n' path traversal vectors", "5 (22 rules verified)");
     std::cout << pad_field("In-process fuzzing mutations", "100,000 (header + path)");
     std::cout << "\n";
     std::vector<std::string> id_strs, target_strs, scope_strs, status_strs, time_strs, res_strs;
@@ -180,7 +182,7 @@ int main()
     std::cout << "Overall test suite summary:\n";
     std::cout << border_line;
     std::cout << "    |" << pk::test::center("Item", w_item)
-              << "|" << pk::test::center("Module / Test Target", w_target)
+              << "|" << pk::test::center("Module / Test target", w_target)
               << "|" << pk::test::center("Scope", w_scope)
               << "|" << pk::test::center("Status", w_status)
               << "|" << pk::test::center("Time", w_time)
@@ -203,7 +205,7 @@ int main()
     std::cout << "     " << std::left << std::setw(33) << "Total tests executed:" << total_cases << "\n";
     std::cout << "     " << std::left << std::setw(33) << "Passed:" << passed_cases << " (" << std::fixed << std::setprecision(1) << pct << "%)\n";
     std::cout << "     " << std::left << std::setw(33) << "Failed:" << (total_cases - passed_cases) << "\n";
-    std::cout << "     " << std::left << std::setw(33) << "Total wall-clock runtime:" << static_cast<int>(std::round(total_runtime_ms)) << "ms\n";
+    std::cout << "     " << std::left << std::setw(33) << "Total wall clock runtime:" << static_cast<int>(std::round(total_runtime_ms)) << "ms\n";
     if (passed_cases == total_cases)
     {
         std::cout << "     " << std::left << std::setw(33) << "Verdict:" << "OK\n";
@@ -221,3 +223,5 @@ int main()
     }
     return (passed_cases == total_cases) ? 0 : 1;
 }
+
+// end
