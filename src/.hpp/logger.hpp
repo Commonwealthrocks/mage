@@ -1,10 +1,11 @@
 // logger.hpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #pragma once
 #include <string>
 #include <mutex>
 #include <functional>
 #include <vector>
+#include <deque>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -27,7 +28,7 @@ namespace pk::core
         std::vector<std::string> get_history()
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            return m_history;
+            return {m_history.begin(), m_history.end()};
         }
         static void log(const std::string &msg)
         {
@@ -60,7 +61,7 @@ namespace pk::core
                 std::lock_guard<std::mutex> lock(inst.m_mutex);
                 inst.m_history.push_back(formatted);
                 if (inst.m_history.size() > 5000)
-                    inst.m_history.erase(inst.m_history.begin());
+                    inst.m_history.pop_front();
                 cb_copy = inst.m_cb;
             }
             if (cb_copy)
@@ -75,7 +76,7 @@ namespace pk::core
 
         std::mutex m_mutex;
         std::function<void(const std::string &)> m_cb;
-        std::vector<std::string> m_history;
+        std::deque<std::string> m_history;
     };
 }
 
