@@ -5,7 +5,7 @@ namespace pk::test
 {
     void run_zipslip_tests(int &cur_id)
     {
-        run_case(cur_id++, "Zip slip: telative traversal (../, ..\\)", "Security", [&]()
+        run_case(cur_id++, "Zip slip: relative traversal (../, ..\\)", "Security", [&]()
                  {
             std::string norm;
             if (pk::path::ok(pk::path::validate_archive_path("../evil.txt", norm)))
