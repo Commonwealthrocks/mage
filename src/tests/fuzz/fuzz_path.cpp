@@ -4,6 +4,7 @@
 //   clang++ -O1 -g -fsanitize=fuzzer,address,undefined -Isrc/.hpp tests/fuzz/fuzz_path.cpp src/.cpp/path_handler.cpp -o fuzz_path
 //////////////////////////////
 // sudo apt update && sudo apt install -y clang libsodium-dev libssl-dev libzstd-dev liblzma-dev libargon2-dev
+// mkdir -p tests/fuzz/corpus_path tests/fuzz/corpus_header
 // clang++ -O1 -g -fsanitize=fuzzer,address,undefined -I.hpp tests/fuzz/fuzz_path.cpp .cpp/path_handler.cpp -o fuzz_path ./fuzz_path -max_len=512 -timeout=5 -rss_limit_mb=1024 -workers=4 -jobs=4
 #include <cstdint>
 #include <cstddef>
