@@ -117,15 +117,19 @@ mk_all() {
     echo -e "${GREEN}[+] Built ${BIN_DIR}/fuzz_header${RESET}"
     if command -v cmake >/dev/null 2>&1 && [ -f "${SRC_DIR}/CMakeLists.txt" ]; then
         echo -e "${CYAN}[*] Configuring and building tests...${RESET}"
-        mkdir -p "${SRC_DIR}/build"
-        (cd "${SRC_DIR}/build" && cmake -G Ninja -DBUILD_TESTS=ON .. >/dev/null 2>&1 && ninja test_mage) || {
-            echo -e "${YELLOW}[!] Note: CMake build failed or Qt6 dynamic dependencies missing for GUI; skipping test_mage binary.${RESET}"
+        local bdir="${SRC_DIR}/build"
+        if [ "$(uname -s)" = "Linux" ]; then
+            bdir="${SRC_DIR}/build_linux"
+        fi
+        mkdir -p "$bdir"
+        (cd "$bdir" && cmake -G Ninja -DBUILD_TESTS=ON .. >/dev/null 2>&1 && ninja test_mage) || {
+            echo -e "${YELLOW}[!] Note: CMake build failed or dependencies missing; skipping test_mage binary.${RESET}"
         }
-        if [ -f "${SRC_DIR}/build/bin/test_mage" ]; then
-            cp "${SRC_DIR}/build/bin/test_mage" "${BIN_DIR}/test_mage"
+        if [ -f "${bdir}/bin/test_mage" ]; then
+            cp "${bdir}/bin/test_mage" "${BIN_DIR}/test_mage"
             echo -e "${GREEN}[+] Deployed test_mage suite executable to ${BIN_DIR}/test_mage${RESET}"
-        elif [ -f "${SRC_DIR}/build/bin/test_mage.exe" ]; then
-            cp "${SRC_DIR}/build/bin/test_mage.exe" "${BIN_DIR}/test_mage.exe"
+        elif [ -f "${bdir}/bin/test_mage.exe" ]; then
+            cp "${bdir}/bin/test_mage.exe" "${BIN_DIR}/test_mage.exe"
             echo -e "${GREEN}[+] Deployed test_mage.exe suite executable to ${BIN_DIR}/test_mage.exe${RESET}"
         fi
     fi
@@ -137,6 +141,8 @@ run_test_suite() {
         test_exe="${BIN_DIR}/test_mage"
     elif [ -f "${BIN_DIR}/test_mage.exe" ]; then
         test_exe="${BIN_DIR}/test_mage.exe"
+    elif [ -f "${SRC_DIR}/build_linux/bin/test_mage" ]; then
+        test_exe="${SRC_DIR}/build_linux/bin/test_mage"
     elif [ -f "${SRC_DIR}/build/bin/test_mage" ]; then
         test_exe="${SRC_DIR}/build/bin/test_mage"
     elif [ -f "${SRC_DIR}/build/bin/test_mage.exe" ]; then
@@ -224,7 +230,7 @@ run_fuzzer() {
 }
 do_clean() {
     echo -e "${CYAN}[*] Cleaning build artifacts and temporary files...${RESET}"
-    rm -rf "${SRC_DIR}/build" "${BIN_DIR}" "${TESTS_DIR}/fuzz_path.log" "${TESTS_DIR}/fuzz_header.log" "${TESTS_DIR}"/fuzz-*.log "${TESTS_DIR}"/crash-* "${TESTS_DIR}"/leak-* "${TESTS_DIR}"/timeout-*
+    rm -rf "${SRC_DIR}/build" "${SRC_DIR}/build_linux" "${BIN_DIR}" "${TESTS_DIR}/fuzz_path.log" "${TESTS_DIR}/fuzz_header.log" "${TESTS_DIR}"/fuzz-*.log "${TESTS_DIR}"/crash-* "${TESTS_DIR}"/leak-* "${TESTS_DIR}"/timeout-*
     echo -e "${GREEN}[+] Test workspace cleaned.${RESET}\n"
 }
 if [ $# -eq 0 ]; then
