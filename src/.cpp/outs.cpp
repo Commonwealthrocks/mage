@@ -1,5 +1,5 @@
 // outs.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include "../.hpp/outs.hpp"
 #include <QDir>
 #include <QMessageBox>
@@ -535,6 +535,111 @@ namespace pk::ui::outs
         custom_msg_dialog dlg(title, message, msg_type::ask, parent);
         return dlg.exec() == QDialog::Accepted;
     }
+    cd_conflict_dialog::cd_conflict_dialog(const QString &filepath, QWidget *parent)
+        : QDialog(parent)
+    {
+        setWindowTitle("File conflict");
+        setWindowFlags((windowFlags() & ~Qt::WindowContextHelpButtonHint & ~Qt::WindowMaximizeButtonHint) | Qt::MSWindowsFixedSizeDialogHint);
+        dont_burn_my_eyes(this);
+        setModal(true);
+        setFixedSize(560, 220);
+        QVBoxLayout *root_layout = new QVBoxLayout(this);
+        root_layout->setSpacing(12);
+        root_layout->setContentsMargins(18, 18, 18, 16);
+        QHBoxLayout *content_layout = new QHBoxLayout();
+        content_layout->setSpacing(14);
+        content_layout->setContentsMargins(0, 0, 0, 0);
+        QLabel *lbl_icon = new QLabel(this);
+        lbl_icon->setStyleSheet("background: transparent;");
+        const QDir app_dir(QCoreApplication::applicationDirPath());
+        QIcon icon(app_dir.absoluteFilePath("assets/imgs/warn.svg"));
+        lbl_icon->setPixmap(icon.pixmap(30, 30));
+        lbl_icon->setFixedSize(30, 30);
+        lbl_icon->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+        content_layout->addWidget(lbl_icon, 0, Qt::AlignTop);
+        QVBoxLayout *right_col = new QVBoxLayout();
+        right_col->setSpacing(6);
+        right_col->setContentsMargins(0, 0, 0, 0);
+        QLabel *lbl_title = new QLabel("File already exists", this);
+        lbl_title->setStyleSheet("background: transparent; font-weight: bold; font-size: 11pt; color: #ffffff;");
+        right_col->addWidget(lbl_title);
+        QLabel *lbl_desc = new QLabel("An existing file with the same name was found at the destination:", this);
+        lbl_desc->setStyleSheet("background: transparent; font-size: 9pt; color: #cccccc;");
+        lbl_desc->setWordWrap(true);
+        right_col->addWidget(lbl_desc);
+        QLineEdit *txt_path = new QLineEdit(filepath, this);
+        txt_path->setReadOnly(true);
+        txt_path->setStyleSheet(
+            "QLineEdit { background-color: #181818; color: #b0b0b0; font-family: 'Consolas', 'Courier New', monospace; "
+            "font-size: 8.5pt; border: 1px solid #444444; border-radius: 0px; padding: 4px 6px; }");
+        txt_path->setCursorPosition(0);
+        right_col->addWidget(txt_path);
+        QLabel *lbl_prompt = new QLabel("What would you like to do?", this);
+        lbl_prompt->setStyleSheet("background: transparent; font-size: 9pt; color: #cccccc;");
+        right_col->addWidget(lbl_prompt);
+        content_layout->addLayout(right_col, 1);
+        root_layout->addLayout(content_layout);
+        QHBoxLayout *btn_layout = new QHBoxLayout();
+        btn_layout->setSpacing(6);
+        btn_layout->addStretch();
+        QIcon ico_over(app_dir.absoluteFilePath("assets/imgs/overwrite.svg"));
+        QIcon ico_skip(app_dir.absoluteFilePath("assets/imgs/skip.svg"));
+        QIcon ico_cancel(app_dir.absoluteFilePath("assets/imgs/cancel.svg"));
+        QPushButton *btn_over = new QPushButton(ico_over, " Overwrite", this);
+        QPushButton *btn_over_all = new QPushButton(ico_over, " Overwrite all", this);
+        QPushButton *btn_skip = new QPushButton(ico_skip, " Skip", this);
+        QPushButton *btn_skip_all = new QPushButton(ico_skip, " Skip all", this);
+        QPushButton *btn_cancel = new QPushButton(ico_cancel, " Cancel", this);
+        btn_over->setDefault(true);
+        connect(btn_over, &QPushButton::clicked, this, &cd_conflict_dialog::on_overwrite);
+        connect(btn_over_all, &QPushButton::clicked, this, &cd_conflict_dialog::on_overwrite_all);
+        connect(btn_skip, &QPushButton::clicked, this, &cd_conflict_dialog::on_skip);
+        connect(btn_skip_all, &QPushButton::clicked, this, &cd_conflict_dialog::on_skip_all);
+        connect(btn_cancel, &QPushButton::clicked, this, &QDialog::reject);
+        btn_layout->addWidget(btn_over);
+        btn_layout->addWidget(btn_over_all);
+        btn_layout->addWidget(btn_skip);
+        btn_layout->addWidget(btn_skip_all);
+        btn_layout->addWidget(btn_cancel);
+        root_layout->addLayout(btn_layout);
+    }
+    void cd_conflict_dialog::showEvent(QShowEvent *event)
+    {
+        QDialog::showEvent(event);
+        dont_burn_my_eyes(this);
+    }
+    void cd_conflict_dialog::on_overwrite()
+    {
+        chci = 2;
+        apply_two_all = false;
+        accept();
+    }
+    void cd_conflict_dialog::on_overwrite_all()
+    {
+        chci = 2;
+        apply_two_all = true;
+        accept();
+    }
+    void cd_conflict_dialog::on_skip()
+    {
+        chci = 1;
+        apply_two_all = false;
+        accept();
+    }
+    void cd_conflict_dialog::on_skip_all()
+    {
+        chci = 1;
+        apply_two_all = true;
+        accept();
+    }
+    int ask_file_conflict(QWidget *parent, const QString &filepath, bool *apply_to_all)
+    {
+        cd_conflict_dialog dlg(filepath, parent);
+        dlg.exec();
+        if (apply_to_all)
+            *apply_to_all = dlg.apply_to_all();
+        return dlg.choice();
+    }
     void cd_prog_dialog::setup_ui(const QString &initial_title)
     {
         setWindowTitle(initial_title);
@@ -601,10 +706,11 @@ namespace pk::ui::outs
         layout->addStretch();
         QHBoxLayout *btn_layout = new QHBoxLayout();
         btn_layout->addStretch();
-        btn_sendtobk = new QPushButton("Background", this);
+        const QDir app_dir(QCoreApplication::applicationDirPath());
+        btn_sendtobk = new QPushButton(QIcon(app_dir.absoluteFilePath("assets/imgs/bk.svg")), " Background", this);
         connect(btn_sendtobk, &QPushButton::clicked, this, &cd_prog_dialog::on_background);
         btn_layout->addWidget(btn_sendtobk);
-        btn_cancel = new QPushButton("Cancel", this);
+        btn_cancel = new QPushButton(QIcon(app_dir.absoluteFilePath("assets/imgs/cancel.svg")), " Cancel", this);
         connect(btn_cancel, &QPushButton::clicked, this, &cd_prog_dialog::reject);
         btn_layout->addWidget(btn_cancel);
         layout->addLayout(btn_layout);
@@ -632,11 +738,13 @@ namespace pk::ui::outs
     }
     cd_prog_dialog::cd_prog_dialog(worker::crypto_worker *worker, QWidget *parent)
         : QDialog(parent), m2_worker(worker), curr_job_idx(0), bm(false), is_cancelled(false),
-          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false),
+          shared_cnflct_choice(std::make_shared<int>(-1))
     {
         QString base_title = "Creating archive";
         if (m2_worker)
         {
+            m2_worker->set_shrd_cnci_chc(shared_cnflct_choice);
             if (m2_worker->what_mode() == worker::crypto_worker::mode::unpack)
                 base_title = "Decrypting archive";
             else if (m2_worker->what_mode() == worker::crypto_worker::mode::am_i_evil)
@@ -655,7 +763,8 @@ namespace pk::ui::outs
     }
     cd_prog_dialog::cd_prog_dialog(const QList<decrypt_job> &jobs, QWidget *parent)
         : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
-          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false),
+          shared_cnflct_choice(std::make_shared<int>(-1))
     {
         batch_total_weight = 0;
         for (const auto &j : jobs)
@@ -670,7 +779,8 @@ namespace pk::ui::outs
     }
     cd_prog_dialog::cd_prog_dialog(const QList<verify_job> &jobs, QWidget *parent)
         : QDialog(parent), m2_worker(nullptr), curr_job_idx(0), bm(true), is_cancelled(false),
-          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false)
+          last_processed(0), current_proc(0), tot_bytes(0), current_pct(0), _success(false),
+          shared_cnflct_choice(std::make_shared<int>(-1))
     {
         batch_total_weight = 0;
         for (const auto &j : jobs)
@@ -843,6 +953,7 @@ namespace pk::ui::outs
             tr_ico->setToolTip(windowTitle());
         }
         m2_worker = new worker::crypto_worker(job.mode);
+        m2_worker->set_shrd_cnci_chc(shared_cnflct_choice);
         if (job.mode == worker::crypto_worker::mode::am_i_evil)
         {
             m2_worker->ss_def_verify_params(job.archive_path, job.password, job.keyfile);
