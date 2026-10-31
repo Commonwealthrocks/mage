@@ -1,5 +1,5 @@
 // path_handler.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include "../.hpp/path_handler.hpp"
 #include <algorithm>
 #include <array>
@@ -83,7 +83,7 @@ namespace pk::path
             return false;
         }
         [[nodiscard]] bool absolute_or_rooted(std::string_view s) noexcept
-        // "\\\\?\\C:\\..." to check any and all win32 based paths
+        // "\\\\?\\C:\\..." to check any and all win32 based paths, drive letters, and NTFS stream colons
         {
             if (s.empty())
                 return false;
@@ -91,7 +91,7 @@ namespace pk::path
                 return true;
             if (s.front() == '\\')
                 return true;
-            if (s.size() >= 2 && std::isalpha(static_cast<unsigned char>(s[0])) && s[1] == ':')
+            if (s.find(':') != std::string_view::npos)
             {
                 return true;
             }
