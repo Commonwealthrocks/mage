@@ -1,6 +1,6 @@
 #!/bin/bash
 ## deploy_deps.sh
-## last updated: 29/10/2026
+## last updated: 31/10/2026
 EXE_PATH="$1"
 OUT_DIR="$2"
 QT_BIN_DIR="$3"
@@ -27,7 +27,7 @@ EOF
         chmod a+x "${OUT_DIR}/linuxdeployqt"
     fi
     echo "[ MAGE ] Running linuxdeployqt..."
-    export VERSION="0.4"
+    export VERSION="0.7a"
     QMAKE_PATH=$(which qmake6)
     "${OUT_DIR}/linuxdeployqt" "$APPDIR/usr/share/applications/mage.desktop" -appimage -unsupported-allow-new-glibc -qmake="$QMAKE_PATH" -extra-plugins=iconengines,imageformats || true
 else
