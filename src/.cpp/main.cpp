@@ -17,6 +17,7 @@
 #include <sodium.h>
 #include <openssl/evp.h>
 #include <QComboBox>
+#include <QAbstractItemView>
 #include <QAbstractSpinBox>
 #include <QSlider>
 #include <QWheelEvent>
@@ -33,7 +34,7 @@ public:
     explicit scroll_filter(QObject *parent = nullptr) : QObject(parent) {}
 
 protected:
-    bool m_m2_scrolled = false;
+    bool m2_scrolled___ = false;
     QPointer<QScrollBar> m_active_hbar;
     QPropertyAnimation *m_scroll_anim = nullptr;
     int m_target_value = 0;
@@ -68,8 +69,40 @@ protected:
                     return true;
                 }
             }
-            if (qobject_cast<QComboBox *>(obj) ||
-                qobject_cast<QAbstractSpinBox *>(obj) ||
+            if (auto *cb = qobject_cast<QComboBox *>(obj))
+            {
+                if (!shift && !right_click)
+                {
+                    wheelEvent->ignore();
+                    return true;
+                }
+                if (right_click)
+                    m2_scrolled___ = true;
+                if (cb->count() > 1 && cb->isEnabled() && (!cb->view() || !cb->view()->isVisible()))
+                {
+                    int delta = wheelEvent->angleDelta().y();
+                    if (delta == 0)
+                        delta = wheelEvent->angleDelta().x();
+                    if (delta != 0)
+                    {
+                        int cur = cb->currentIndex();
+                        int total = cb->count();
+                        int next = (delta > 0) ? (cur - 1) : (cur + 1);
+                        if (next < 0)
+                            next = total - 1;
+                        else if (next >= total)
+                            next = 0;
+                        if (next != cur)
+                        {
+                            cb->setCurrentIndex(next);
+                        }
+                        wheelEvent->accept();
+                        return true;
+                    }
+                }
+                return false;
+            }
+            if (qobject_cast<QAbstractSpinBox *>(obj) ||
                 qobject_cast<QSlider *>(obj))
             {
                 if (!shift && !right_click)
@@ -77,6 +110,8 @@ protected:
                     wheelEvent->ignore();
                     return true;
                 }
+                if (right_click)
+                    m2_scrolled___ = true;
             }
             else if (shift || right_click || wheelEvent->angleDelta().x() != 0)
             {
@@ -100,7 +135,7 @@ protected:
                     if (delta != 0)
                     {
                         if (right_click)
-                            m_m2_scrolled = true;
+                            m2_scrolled___ = true;
                         if (m_active_hbar != hbar)
                         {
                             if (m_scroll_anim)
@@ -151,12 +186,12 @@ protected:
         }
         else if (event->type() == QEvent::ContextMenu || event->type() == QEvent::MouseButtonRelease)
         {
-            if (m_m2_scrolled)
+            if (m2_scrolled___)
             {
                 auto *me = dynamic_cast<QMouseEvent *>(event);
                 if (!me || me->button() == Qt::RightButton)
                 {
-                    m_m2_scrolled = false;
+                    m2_scrolled___ = false;
                     event->accept();
                     return true;
                 }
