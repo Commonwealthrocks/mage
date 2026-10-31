@@ -1,5 +1,5 @@
 // argon2id_hashing.cpp
-// last updated: 17/06/2026
+// last updated: 31/10/2026
 #include "../.hpp/argon2id_hashing.hpp"
 #include <argon2.h>
 #ifdef _WIN32
@@ -9,7 +9,7 @@
 #pragma comment(lib, "bcrypt.lib")
 #endif
 #else
-#include <fstream>
+#include <sodium.h>
 #endif
 namespace pk::crypto::kdf
 {
@@ -52,19 +52,10 @@ namespace pk::crypto::kdf
             return {{}, kdf_err::rand_generation_failed};
         }
 #else
-        std::ifstream urandom("/dev/urandom", std::ios::in | std::ios::binary); // linux makes this very ez
-        if (urandom)
-        {
-            urandom.read(reinterpret_cast<char *>(salt.data()), salt.size());
-            if (!urandom)
-            {
-                return {{}, kdf_err::rand_generation_failed};
-            }
-        }
-        else
-        {
-            return {{}, kdf_err::rand_generation_failed};
-        }
+        randombytes_buf(salt.data(), salt.size());
+        // i am PRETTY sure NaCl still taps into /dev/urandom/
+        // for pseudo-random data but it is (hopefully) less likely
+        // to fail on us...?
 #endif
         return {std::move(salt), kdf_err::none};
     }
