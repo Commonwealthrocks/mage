@@ -201,11 +201,11 @@ int main()
     }
     std::cout << border_line << "\n";
     double pct = (total_cases > 0) ? (100.0 * passed_cases / total_cases) : 0.0;
-    std::cout << "Suite Status:\n";
+    std::cout << "Suite status:\n";
     std::cout << "     " << std::left << std::setw(33) << "Total tests executed:" << total_cases << "\n";
     std::cout << "     " << std::left << std::setw(33) << "Passed:" << passed_cases << " (" << std::fixed << std::setprecision(1) << pct << "%)\n";
     std::cout << "     " << std::left << std::setw(33) << "Failed:" << (total_cases - passed_cases) << "\n";
-    std::cout << "     " << std::left << std::setw(33) << "Total wall clock runtime:" << static_cast<int>(std::round(total_runtime_ms)) << "ms\n";
+    std::cout << "     " << std::left << std::setw(33) << "Total wall clock runtime:" << static_cast<int>(std::round(total_runtime_ms)) << "ms\n\n";
     if (passed_cases == total_cases)
     {
         std::cout << "     " << std::left << std::setw(33) << "Verdict:" << "OK\n";
@@ -222,6 +222,10 @@ int main()
         }
     }
     return (passed_cases == total_cases) ? 0 : 1;
+    // the overall log format is very similar to the one of MAGE's
+    // verification log and it surprisingly looks decent in the
+    // terminal and if so it can be piped to a file either way;
+    // so not much to complain
 }
 
 // end
