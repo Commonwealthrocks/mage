@@ -1,5 +1,5 @@
 // gui_worker.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include "../.hpp/gui_worker.hpp"
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/error_msg.hpp"
@@ -40,7 +40,6 @@ namespace pk::ui::worker
         pk::mem_::secure_wipe(utf8.data(), static_cast<std::size_t>(utf8.size()));
         utf8.clear();
     }
-
     crypto_worker::crypto_worker(mode m, QObject *parent)
         : QThread(parent), __mode(m)
     {
@@ -609,13 +608,19 @@ namespace pk::ui::worker
                 pk::core::logger::log("starting archive unpack...");
                 emit progress(0);
                 emit current_ac0("Deriving encryption key...");
-                int remembered_choice = -1;
+                int remembered_choice = (shared_cnflct_choice && *shared_cnflct_choice != -1)
+                                            ? *shared_cnflct_choice
+                                            : -1;
                 pk::crypto::format::unpack_archive(
                     pk::path::from_utf8(in_path), pk::path::from_utf8(output_dir), final_password, ext_behavior_v, ext_overwrite_v,
                     [this, &remembered_choice](const std::string &___filepath) -> int
                     {
                         if (isInterruptionRequested())
                             return 0;
+                        if (shared_cnflct_choice && *shared_cnflct_choice != -1)
+                        {
+                            return *shared_cnflct_choice;
+                        }
                         if (remembered_choice != -1)
                         {
                             return remembered_choice;
@@ -631,38 +636,18 @@ namespace pk::ui::worker
                                 }
                                 emit need_fg();
                                 pk::ui::sfx::play_info();
-                                QMessageBox msgBox(QApplication::activeModalWidget());
-                                msgBox.setWindowTitle("File conflict");
-                                msgBox.setText(QString("The file already exists:\n%1\n\nWhat would you like to do?").arg(QString::fromStdString(___filepath)));
-                                QPushButton *btnOver = msgBox.addButton("Overwrite", QMessageBox::ActionRole);
-                                QPushButton *btnOverAll = msgBox.addButton("Overwrite all", QMessageBox::ActionRole);
-                                QPushButton *btnSkip = msgBox.addButton("Skip", QMessageBox::ActionRole);
-                                QPushButton *btnSkipAll = msgBox.addButton("Skip all", QMessageBox::ActionRole);
-                                QPushButton *btnCancel = msgBox.addButton("Cancel", QMessageBox::RejectRole);
-                                (void)btnCancel;
-                                pk::ui::outs::dont_burn_my_eyes(&msgBox);
-                                msgBox.exec();
-                                if (msgBox.clickedButton() == btnOver)
+                                QWidget *parent = QApplication::activeModalWidget();
+                                if (!parent)
+                                    parent = QApplication::activeWindow();
+                                bool apply_all = false;
+                                choice = pk::ui::outs::ask_file_conflict(parent, QString::fromStdString(___filepath), &apply_all);
+                                if (apply_all)
                                 {
-                                    choice = 2;
-                                }
-                                else if (msgBox.clickedButton() == btnOverAll)
-                                {
-                                    choice = 2;
-                                    remembered_choice = 2;
-                                }
-                                else if (msgBox.clickedButton() == btnSkip)
-                                {
-                                    choice = 1;
-                                }
-                                else if (msgBox.clickedButton() == btnSkipAll)
-                                {
-                                    choice = 1;
-                                    remembered_choice = 1;
-                                }
-                                else
-                                {
-                                    choice = 0;
+                                    remembered_choice = choice;
+                                    if (shared_cnflct_choice)
+                                    {
+                                        *shared_cnflct_choice = choice;
+                                    }
                                 } },
                             Qt::BlockingQueuedConnection);
                         return choice;
