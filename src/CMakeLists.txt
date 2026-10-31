@@ -1,5 +1,5 @@
 ## CMakeLists.txt
-## last updated: 29/10/2026
+## last updated: 31/10/2026
 ## cmake -G "Ninja" ..                               > (dynamic Qt6 + static crypto, default)
 ## [or] cmake -G "Ninja" -DMAGE_STATIC_BUILD=ON ..   > (full static build)
 ## ninja
@@ -113,8 +113,23 @@ if(WIN32)
         "${CMAKE_SOURCE_DIR}/assets/__cache/no/qt.conf" "$<TARGET_FILE_DIR:mage>/qt.conf"
     )
 endif()
+option(BUILD_TESTS "Build test suite" ON)
+if(BUILD_TESTS)
+    add_executable(test_mage
+        tests/test_main.cpp
+        tests/argon2id_tv.cpp
+        tests/aes256siv_tv.cpp
+        tests/ciphers_tv.cpp
+        tests/roundtrip.cpp
+        tests/boundary.cpp
+        tests/tamper.cpp
+        tests/zipslip.cpp
+        tests/resource_limits.cpp
+        tests/fuzz_inprocess.cpp
+    )
+    target_link_libraries(test_mage PRIVATE mage_core)
+endif()
 if(MAGE_STATIC_BUILD)
-    message(STATUS "static")
     target_link_options(mage PRIVATE -static -static-libgcc -static-libstdc++)
 else()
     message(STATUS "dynamic (df)")
