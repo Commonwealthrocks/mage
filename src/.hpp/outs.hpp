@@ -1,6 +1,7 @@
 // outs.hpp
-// last updated: 28/10/2026
+// last updated: 31/10/2026
 #pragma once
+#include <memory>
 #include <QString>
 #include <QWidget>
 #include <QDialog>
@@ -82,11 +83,34 @@ namespace pk::ui::outs
     void error(QWidget *parent, const QString &title, const QString &message, const QString &suggestion = QString(), const QString &details = QString());
     void show_error(QWidget *parent, const QString &raw_or_formatted_error);
     bool ask(QWidget *parent, const QString &title, const QString &message);
+    int ask_file_conflict(QWidget *parent, const QString &filepath, bool *apply_to_all = nullptr);
     void dont_burn_my_eyes(QWidget *window);
     bool r_u_a_valid_filename(const QString &name, QString *err_msg = nullptr);
     bool valid_path_probable(const QString &path, QString *err_msg = nullptr);
     void cd_about_mage(QWidget *parent);
     void toggle_internal_console();
+    class cd_conflict_dialog : public QDialog
+    {
+        Q_OBJECT
+    public:
+        explicit cd_conflict_dialog(const QString &filepath, QWidget *parent = nullptr);
+        ~cd_conflict_dialog() override = default;
+        int choice() const { return chci; }
+        bool apply_to_all() const { return apply_two_all; }
+
+    protected:
+        void showEvent(QShowEvent *event) override;
+
+    private slots:
+        void on_overwrite();
+        void on_overwrite_all();
+        void on_skip();
+        void on_skip_all();
+
+    private:
+        int chci = 0;
+        bool apply_two_all = false;
+    };
     class cd_prog_dialog : public QDialog
     {
         Q_OBJECT
@@ -131,6 +155,7 @@ namespace pk::ui::outs
         QList<job_result> results() const { return job_res__; }
         bool was_cancelled() const { return is_cancelled; }
         bool was_force_killed() const { return force_taskkill; }
+        std::shared_ptr<int> shared_conflict_choice() const { return shared_cnflct_choice; }
 
     protected:
         void changeEvent(QEvent *event) override;
@@ -220,6 +245,7 @@ namespace pk::ui::outs
         QMenu *tr_menu = nullptr;
         QPushButton *btn_cancel = nullptr;
         QPushButton *btn_sendtobk = nullptr;
+        std::shared_ptr<int> shared_cnflct_choice;
     };
     class cd_keyfile : public QDialog
     {
