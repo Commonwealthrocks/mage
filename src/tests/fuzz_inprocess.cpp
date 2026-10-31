@@ -5,7 +5,7 @@ namespace pk::test
 {
     void fuzz___inproc_test(int &cur_id, const std::filesystem::path &sandbox)
     {
-        run_case(cur_id++, "Fuzz: 100,000 mutated headers (0 leaks)", "In-process", [&]()
+        run_case(cur_id++, "Fuzz: 100,000 mutated headers (0 crashes)", "In-process", [&]()
                  {
             std::mt19937_64 rng(1337);
             std::uniform_int_distribution<uint8_t> dist_byte(0, 255);
