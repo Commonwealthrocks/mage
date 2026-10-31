@@ -84,8 +84,18 @@ namespace pk::crypto::format
                 throw std::runtime_error("security error -> output directory is a symlink or reparse point");
         }
 #ifdef _WIN32
+        std::error_code ec_out_ex;
+        if (std::filesystem::exists(pk::path::to_ext_path(out_path), ec_out_ex))
+        {
+            SetFileAttributesW(pk::path::to_ext_win32_path(out_path).c_str(), FILE_ATTRIBUTE_NORMAL);
+        }
         std::ofstream out(pk::path::to_ext_path(out_path), std::ios::binary | std::ios::trunc);
 #else
+        std::error_code ec_out_ex;
+        if (std::filesystem::exists(out_path, ec_out_ex))
+        {
+            (void)::chmod(out_path.c_str(), 0644);
+        }
         std::ofstream out(out_path.c_str(), std::ios::binary | std::ios::trunc);
 #endif
         if (!out)
@@ -638,7 +648,8 @@ namespace pk::crypto::format
                 {
                     throw std::runtime_error("security error -> cannot create directory because a symlink or reparse point exists: " + norm_path);
                 }
-                if (std::filesystem::exists(pk::path::to_ext_path(target_path)) && !std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
+                std::error_code ec_dir_ex, ec_dir_isd;
+                if (std::filesystem::exists(pk::path::to_ext_path(target_path), ec_dir_ex) && !std::filesystem::is_directory(pk::path::to_ext_path(target_path), ec_dir_isd))
                 {
                     throw std::runtime_error("path conflict -> cannot create directory '" + norm_path + "' because a file with the same name exists.");
                 }
