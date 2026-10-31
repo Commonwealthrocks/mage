@@ -1130,13 +1130,14 @@ namespace pk::ui::outs
             tr_ico->hide();
         if (m2_worker && m2_worker->isRunning())
             m2_worker->setPriority(QThread::NormalPriority);
-        if (parentWidget())
-        {
-            parentWidget()->setWindowState((parentWidget()->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
-            parentWidget()->showNormal();
-            parentWidget()->raise();
-            dont_burn_my_eyes(parentWidget());
-        }
+        if (false) // keep parent widget hidden while progress is running
+            if (parentWidget())
+            {
+                parentWidget()->setWindowState((parentWidget()->windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
+                parentWidget()->showNormal();
+                parentWidget()->raise();
+                dont_burn_my_eyes(parentWidget());
+            }
         setWindowState((windowState() & ~Qt::WindowMinimized) | Qt::WindowActive);
         showNormal();
         raise();
@@ -2087,16 +2088,21 @@ namespace pk::ui::outs
             comp_level,
             chunk_size_used->value());
         QPointer<worker::crypto_worker> safe_worker(worker);
+        this->hide();
         cd_prog_dialog pd(worker, this);
         if (pd.exec() == QDialog::Accepted)
         {
             if (safe_worker)
                 safe_worker->wait();
-            info(this, "Archive created", "Archive successfully created.", QString(), false);
+            info(nullptr, "Archive created", "Archive successfully created.", QString(), false);
             accept();
         }
         else
         {
+            this->showNormal();
+            this->raise();
+            this->activateWindow();
+            dont_burn_my_eyes(this);
             if (safe_worker && !pd.was_force_killed())
                 safe_worker->wait(500);
             if (!pd.was_cancelled() && !pd.what_err_msg().isEmpty() && !pd.what_err_msg().contains("cancelled", Qt::CaseInsensitive))
@@ -2826,6 +2832,7 @@ namespace pk::ui::outs
         }
         if (!jobs.isEmpty())
         {
+            this->hide();
             cd_prog_dialog pd(jobs, this);
             pd.exec();
             for (auto &jb : jobs)
@@ -2833,6 +2840,10 @@ namespace pk::ui::outs
                 wipe_qstring(jb.password);
             }
             jobs.clear();
+            this->showNormal();
+            this->raise();
+            this->activateWindow();
+            dont_burn_my_eyes(this);
             for (const auto &r : pd.results())
             {
                 if (r.success)
@@ -3737,6 +3748,7 @@ namespace pk::ui::outs
         }
         if (!jobs.isEmpty())
         {
+            this->hide();
             cd_prog_dialog pd(jobs, this);
             pd.exec();
             for (auto &jb : jobs)
@@ -3744,6 +3756,10 @@ namespace pk::ui::outs
                 wipe_qstring(jb.password);
             }
             jobs.clear();
+            this->showNormal();
+            this->raise();
+            this->activateWindow();
+            dont_burn_my_eyes(this);
             for (const auto &res : pd.results())
             {
                 int i = res.list_index;
