@@ -1,6 +1,7 @@
 // gui_worker.hpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #pragma once
+#include <memory>
 #include <QThread>
 #include <QString>
 #include <vector>
@@ -48,6 +49,7 @@ namespace pk::ui::worker
             const QString &in_path,
             const QString &password,
             const QString &keyfile_path);
+        void set_shrd_cnci_chc(std::shared_ptr<int> choice) { shared_cnflct_choice = choice; }
     signals:
         void success();
         void error(const QString &message);
@@ -81,6 +83,7 @@ namespace pk::ui::worker
         int ext_behavior_v;
         int ext_overwrite_v;
         pk::crypto::am_i_evil::verification_report verify_rep;
+        std::shared_ptr<int> shared_cnflct_choice;
     };
 }
 
