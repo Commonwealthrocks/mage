@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -648,9 +648,10 @@ namespace pk::crypto::format
             }
             else
             {
-                if (std::filesystem::exists(pk::path::to_ext_path(target_path)))
+                std::error_code ec_exist, ec_isdir;
+                if (std::filesystem::exists(pk::path::to_ext_path(target_path), ec_exist))
                 {
-                    if (std::filesystem::is_directory(pk::path::to_ext_path(target_path)))
+                    if (std::filesystem::is_directory(pk::path::to_ext_path(target_path), ec_isdir))
                     {
                         throw std::runtime_error("path conflict -> cannot create file '" + norm_path + "' because a directory with the same name exists.");
                     }
@@ -701,8 +702,18 @@ namespace pk::crypto::format
                     throw std::runtime_error("security error -> parent directory is a symlink or reparse point; " + norm_path);
                 }
 #ifdef _WIN32
+                std::error_code ec_ex;
+                if (std::filesystem::exists(pk::path::to_ext_path(target_path), ec_ex))
+                {
+                    SetFileAttributesW(pk::path::to_ext_win32_path(target_path).c_str(), FILE_ATTRIBUTE_NORMAL);
+                }
                 std::ofstream out(pk::path::to_ext_path(target_path), std::ios::binary | std::ios::trunc);
 #else
+                std::error_code ec_ex;
+                if (std::filesystem::exists(target_path, ec_ex))
+                {
+                    (void)::chmod(target_path.c_str(), 0644);
+                }
                 std::ofstream out(target_path, std::ios::binary | std::ios::trunc);
 #endif
                 if (!out)
