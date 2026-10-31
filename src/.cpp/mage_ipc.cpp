@@ -1,5 +1,5 @@
 // mage_ipc.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include "../.hpp/mage_ipc.hpp"
 #include <QDataStream>
 #include <QCryptographicHash>
@@ -130,6 +130,7 @@ namespace pk::ipc
         {
             emit rq_ver(path);
         }
+        socket->disconnectFromServer();
     }
 }
 
