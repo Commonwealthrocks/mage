@@ -3,3 +3,6 @@
 **/dev ## dev is an origin of main, not applicable for me
 **/exe
 **/.vscode
+**/corpus_header
+**/corpus_path
+/src/tests/bin/
