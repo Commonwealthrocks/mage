@@ -1,5 +1,5 @@
 // main.cpp
-// last updated: 30/10/2026
+// last updated: 31/10/2026
 #include <QApplication>
 #include <QDir>
 #include <QCoreApplication>
@@ -172,7 +172,17 @@ int main(int argc, char *argv[])
     app.setOrganizationName("");
     app.setOrganizationDomain("");
     app.setApplicationVersion("v0.7a");
-    app.setWindowIcon(QIcon(QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("assets/imgs/s_icons/mage.ico")));
+    const QDir app_dir(QCoreApplication::applicationDirPath());
+    QIcon app_icon(app_dir.absoluteFilePath("assets/imgs/s_icons/mage.ico"));
+    if (app_icon.isNull() || app_icon.pixmap(32, 32).isNull())
+    {
+        app_icon = QIcon(app_dir.absoluteFilePath("assets/imgs/s_icons/_/256.png"));
+    }
+    if (app_icon.isNull() || app_icon.pixmap(32, 32).isNull())
+    {
+        app_icon = QIcon(app_dir.absoluteFilePath("assets/imgs/s_icons/_/32.png"));
+    }
+    app.setWindowIcon(app_icon);
     // init nacl
     if (sodium_init() < 0)
     {
