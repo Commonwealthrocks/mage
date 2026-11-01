@@ -1,104 +1,126 @@
 # **MAGE1 file format**
 The `.mage` archive format is simple on the outside but extremely strict on the inside; it uses a solid compression model, meaning the archive's metadata (file paths, timestamps, directory structures) is compressed and encrypted right alongside the actual file contents.
 
-## **Nonce construction (RFC 8439 / TLS 1.3 standard)**
-To guarantee nonce uniqueness while preventing reordering attacks, **MAGE** constructs nonces and AAD dynamically per chunk using a monotonically increasing 64-bit `chunk_index` (starting at 0):
+## **Nonce construction (TLS 1.3 RFC 8446 §5.3 pattern)**
+To guarantee nonce uniqueness while preventing reordering attacks, **MAGE** constructs nonces and AAD dynamically per chunk using a monotonically increasing 64-bit `chunk_index` (starting at 0), inspired by the TLS 1.3 (RFC 8446 §5.3) sequence-number XOR masking pattern:
 
-1. **Dynamic truncation:** the 24-byte `base nonce` is first truncated to the exact size required by the active cipher (`12` bytes for **AES-GCM**, `24` bytes for **XChaCha20**, or `16` bytes for **AES-SIV**).
-2. **Nonce XOR:** `current nonce = truncated base nonce XOR chunk_index`
-3. **AAD (additional authenticated data):** `[65-byte header] + [8-byte chunk_index (little-endian)]`
+1. **Dynamic truncation:** the 24-byte `base nonce` (stored in the header) is first truncated to the exact size required by the active cipher (`12` bytes for **AES-GCM**, `24` bytes for **XChaCha20**, or `16` bytes for **AES-SIV**).
+2. **Nonce XOR:** the 64-bit `chunk_index` is treated as an unsigned integer in **little-endian** byte order and XORed byte-by-byte into the first 8 bytes (`current_nonce[0..7]`, the lowest byte offsets) of the truncated base nonce:
 
-This ensures that every chunk has a mathematically unique nonce, and chunks cannot be swapped, reordered, or moved without the MAC verification instantly failing.
+```text
+current_nonce[i] = base_nonce[i] ^ ((chunk_index >> (i * 8)) & 0xFF)   for i in [0..7]
+```
+
+Any remaining bytes (ex. bytes 8-11 for **AES-GCM**, or bytes 8-23 for **XChaCha20**) remain untouched from the base nonce.
+
+3. **AAD (additional authenticated data):** every chunk authenticates the full container header alongside its own position:
+
+```text
+AAD = [65-byte header] + [8-byte chunk_index (little-endian uint64_t)]
+```
+
+This ensures that every chunk has a mathematically unique nonce, and chunks cannot be swapped, reordered, or moved between archives without MAC verification instantly failing.
 
 ## **The format itself**
-The format is split into two parts...
+The container format is split into two physical parts on disk:
 
-The `header` which is 65 bytes; the `header` is completely unencrypted since it holds KDF parameters and magic bytes. If it were encrypted, there'd be no possible decryption. The second part of the format is the `payload` with a size of N bytes (N for *"God knows how many"*); the `payload` is the encrypted (and optionally compressed) stream holding everything else.
+1. The **header** (65 bytes): completely unencrypted so that the KDF parameters, salt, and base nonce can be read to derive the decryption key.
+2. The **payload** (N bytes): a sequence of encrypted AEAD chunks of size up to `chunk_size_bytes + 16` bytes (where 16 bytes is the AEAD MAC tag). When decrypted and decompressed, it forms a continuous plaintext stream.
+
+---
 
 ### **The header (65 bytes)**
-All integers are stored in **little-endian** byte order, always. Since not every device / OS / arch picks the same byte order, enforcement is needed.
+All multi-byte integers are stored in **little-endian** byte order.
 
-| Offset |  Size (bytes) |      Type     |        Name       |                                          Description                                         |
-|--------|---------------|---------------|-------------------|----------------------------------------------------------------------------------------------|
-| `0x00` |       4       |    `char[4]`  |  **Magic bytes**  | Always `M`, `A`, `G`, `E`; if this is missing, then it's not a **MAGE** archive... shocking. |
-| `0x04` |       1       |    `uint8_t`  |    **Version**    |                                         Currently `1`.                                       |
-| `0x05` |       1       |    `uint8_t`  |     **Cipher**    |                         `0` = AES-GCM, `1` = XChaCha20, `2` = AES-SIV.                       |
-| `0x06` |       1       |    `uint8_t`  | **Metadata flag** |                        `1` if timestamps / attributes are saved, `0` if not.                 |
-| `0x07` |       1       |    `uint8_t`  |  **Compression**  |                                   `0` = ZSTD, `1` = LZMA2.                                   |
-| `0x08` |       1       |    `int8_t`   |     **Level**     |                           the compression preset / raw level used.                           |
-| `0x09` |       4       |   `uint32_t`  |   **Mem cost**    |                                   Argon2id memory cost in KB.                                |
-| `0x0D` |       4       |   `uint32_t`  |   **Time cost**   |                                      Argon2id iterations.                                    |
-| `0x11` |       4       |   `uint32_t`  |  **Parallelism**  |                                        Argon2id lanes.                                       |
-| `0x15` |      16       | `uint8_t[16]` |   **KDF salt**    |                                   random salt for Argon2id.                                  |
-| `0x25` |      24       | `uint8_t[24]` |   **Base nonce**  |                             base IV for constructing chunk nonces.                           |
-| `0x3D` |       4       |   `uint32_t`  |  **Chunk size**   |                               how many bytes per encrypted chunk.                            |
+| Offset | Size (bytes) | Type | Name | Description |
+|---|---|---|---|---|
+| `0x00` | 4 | `char[4]` | **Magic bytes** | Always `M`, `A`, `G`, `E`. If these do not match, it is not a valid MAGE archive. |
+| `0x04` | 1 | `uint8_t` | **Version** | Archive specification version (currently `1`). |
+| `0x05` | 1 | `uint8_t` | **Cipher** | Encryption algorithm: `0` = AES-256-GCM, `1` = XChaCha20-Poly1305, `2` = AES-256-SIV. |
+| `0x06` | 1 | `uint8_t` | **Metadata flag** | `1` if file timestamps and OS attributes are preserved, `0` if stripped. |
+| `0x07` | 1 | `uint8_t` | **Compression** | Compression engine: `0` = Zstandard (ZSTD), `1` = LZMA2. |
+| `0x08` | 1 | `int8_t` | **Level** | Compression preset or raw compression level (`0` = Store preset). |
+| `0x09` | 4 | `uint32_t` | **Mem cost** | Argon2id memory cost in KiB (1,024 KiB to 2,097,152 KiB). |
+| `0x0D` | 4 | `uint32_t` | **Time cost** | Argon2id iterations (passes over memory, 1 to 32). |
+| `0x11` | 4 | `uint32_t` | **Parallelism** | Argon2id execution threads/lanes (1 to 32). |
+| `0x15` | 16 | `uint8_t[16]` | **KDF salt** | Cryptographically secure random salt for Argon2id. |
+| `0x25` | 24 | `uint8_t[24]` | **Base nonce** | Base IV for constructing per-chunk nonces. |
+| `0x3D` | 4 | `uint32_t` | **Chunk size** | Maximum uncompressed payload bytes per AEAD chunk (1 MB to 64 MB). |
 
-### **The payload**
-Once you derive the master key using **Argon2id**, and decrypt / decompress the payload stream... what does it actually look like? Well its *mostly* of what you'd expect for a strict mathematical archive format.
+---
 
-#### **1. Zipbomb prevention (sorta)**
-Right at the start of the stream, there's a single `8-byte` integer...
+### **The payload stream**
+Once the master key is derived via **Argon2id**, and the AEAD chunks are decrypted and decompressed, the raw plaintext stream unfolds in a single-pass sequential record format:
 
-$$ \text{total origin size} \quad (\text{uint64\_t}) $$
-
-This is the uncompressed size of all files combined; before doing *anything*, the unpacker checks this to make sure you aren't about to unpack a petabyte of zeros onto your SSD; they're not really cheap nowadays.
-
-#### **2. The entry table**
-Next up is the file table; first, a `4-byte` integer telling us how many things we have in the archive...
-
-$$ \text{number of entries} \quad (\text{uint32\_t}) $$
-
-Do note, the hardcap / limit for the max amount of entries or files in a single archive is 1,000,000 (one-million). But then; for *every* entry, it lays out the properties sequentially...
-
-|  Size |    Type    |                        What is it?                          |
-|-------|------------|-------------------------------------------------------------|
-|  `2`  | `uint16_t` |   **Path length**: how long the relative path string is.    |
-| `var` |  `char[]`  |     **Path**: the actual string (ex. `folder/file.txt`).    |
-|  `1`  |  `uint8_t` | **Is directory**: `1` if it's a folder, `0` if it's a file. |
-|  `8`  | `uint64_t` |  **File size**: size of the file (always `0` for folders).  |
-
-*If* the `metadata flag` in the `header` was `1`, it also appends these 4 fields to the entry...
-
-| Size |    Type    |                     What is it?                     |
-|------|------------|-----------------------------------------------------|
-|  `8` | `uint64_t` |             **CTime**: creation time.               |
-|  `8` | `uint64_t` |              **ATime**: access time.                |
-|  `8` | `uint64_t` |            **MTime**: modification time.            |
-|  `4` | `uint32_t` | **Attributes**: native OS attributes / permissions. |
-
-#### **3. The file data**
-After the `entry table` is completely exhausted, the raw file data begins. 
-The bytes of every single file are simply concatenated together in the **exact same order** they appeared in the `entry table`. 
-
-Directories are *skipped* since they hold no storage mass or data. 0-byte files are also *skipped* since they hold no data to encrypt and compress. Because we know the `file size` of every entry from the table; the unpacker knows exactly how many bytes to read for each file before moving on to the next one.
-
-That's pretty much it, when the stream runs out; it is done and dusted!
-
-
-## **Why not just standard `.zip`?**
-I don't think I need to explain this, the `.zip` format (legacy especially) is flawed; very flawed. It has a history of being very exploitable from path traversal (commonly named *"The Zip Slip"*), header n' parser mismatch (called *"The Zombie Zip"*), archive concatenation n' obfuscation, and so on. The list is getting too long already.
-
-**NOTE TO YOU READING THIS!!** The `.mage` format has no current reported vulnerabilities or CVEs but that does not mean they don't exist or they are impossible to forge; this document is a glance at the format from an "on-paper" view. This format should be audited and peer-reviewed like any other format before being "recommended".
-
+```text
+[Stream Preamble] -> [Entry Record 1] -> [Entry Record 2] -> ... -> [Entry Record N]
 ```
---
 
+#### **1. Stream preamble**
+Right at the start of the uncompressed stream, there are two global header fields:
+
+| Offset | Size (bytes) | Type | Name | Description |
+|---|---|---|---|---|
+| `0x00` | 8 | `uint64_t` | **Total origin size** | Cumulative uncompressed size of all file data combined. |
+| `0x08` | 4 | `uint32_t` | **Number of entries** | Total count of file and directory records in the archive (limit: 1,000,000). |
+
+##### **Zipbomb prevention:**
+Before extracting any files, the unpacker inspects `total_origin_size`:
+- If the archive's compressed size is known and `total_origin_size > compressed_size * 100` with `total_origin_size > 1 GB`, MAGE flags a possible zipbomb.
+- During extraction, cumulative extracted bytes are strictly tracked against `total_origin_size`. If an entry declares or emits bytes that exceed the declared budget, extraction halts immediately.
+
+---
+
+#### **2. Sequential entry records**
+Immediately following the preamble, all `num_entries` records appear sequentially. Each entry consists of an **entry header**, followed immediately by its **raw file payload** (if it is a non-empty file):
+
+##### **Entry header:**
+| Size (bytes) | Type | Name | Description |
+|---|---|---|---|
+| 2 | `uint16_t` | **Path length** | Byte length of the relative path string ($L$). |
+| $L$ | `char[L]` | **Relative path** | Normalized UTF-8 relative path (e.g. `sub/document.pdf`). |
+| 1 | `uint8_t` | **Is directory** | `1` if the entry is a folder, `0` if it is a regular file. |
+| 8 | `uint64_t` | **File size** | Size of the file in bytes (always `0` for directories). |
+
+*If the `metadata flag` in the 65-byte container header was `1`, the entry header includes 4 additional metadata fields:*
+
+| Size (bytes) | Type | Name | Description |
+|---|---|---|---|
+| 8 | `uint64_t` | **CTime** | File creation timestamp. |
+| 8 | `uint64_t` | **ATime** | File last access timestamp. |
+| 8 | `uint64_t` | **MTime** | File last modification timestamp. |
+| 4 | `uint32_t` | **Attributes** | Native Win32 / POSIX file attributes and permission bits. |
+
+##### **Entry file payload:**
+Immediately following the entry header:
+- If `is_directory == 1` or `file_size == 0`: No payload bytes are written; the stream transitions immediately to the next entry record.
+- If `is_directory == 0` and `file_size > 0`: Exactly `file_size` raw file bytes follow sequentially in the stream before the next entry begins.
+
+Because each file's data immediately follows its metadata header, extraction is fully streaming and single-pass: the unpacker reads one entry header, streams its contents to disk (or memory for verification), and proceeds directly to the next entry without needing central directory seeking or massive RAM buffers.
+
+## **Why not standard `.zip`?**
+The legacy `.zip` format has a long history of critical security flaws, including path traversal (*zip slip*), central directory parser mismatches (*Zombie Zip*, CVE-2026-0866), and archive concatenatio n/ obfuscation (MITRE ATT&CK T1027.015).
+
+In contrast, **MAGE** enforces:
+1. **Authenticated encryption per chunk:** No unauthenticated plaintext or CRC32 checksums; any byte modification triggers a MAC failure.
+2. **Encrypted solid metadata:** File names, sizes, directory structures, and attributes are hidden inside the encrypted payload.
+3. **Strict path canonicalization:** 22 validation rules prevent zip slip, drive-letter escapes, UNC network paths, DOS device names and alternate data streams.
+
+```text
+--
 Zip Slip
 CVE ID: varies ¯\_(ツ)_/¯
 Source: https://security.snyk.io/research/zip-slip-vulnerability
 
 --
-
 Zombie Zip
 CVE ID: CVE-2026-0866
 Source: https://www.malwarebytes.com/blog/news/2026/03/zombie-zip-method-can-fool-antivirus-during-the-first-scan
 Example: https://github.com/bombadil-systems/zombie-zip
 
 --
-
 Archive concatenation n' obfuscation
 Framework ID: T1027.015
 Source: https://attack.mitre.org/techniques/T1027/015/
-
 --
 ```
