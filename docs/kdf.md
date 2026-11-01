@@ -1,5 +1,5 @@
 # **MAGE's key derivation function (KDF)**
-How **MAGE** handles password hashing / key erivation functions with **Argon2id**!
+How **MAGE** handles password hashing / key derivation functions with **Argon2id**!
 
 ## **The problem with passwords**
 Now you've probably heard of this a billion times but when it comes to passwords; us humans suck at making them. That's why we have to always mathematically derive them with a key! It's the reason why **AES-256-GCM** or **XChaCha20-Poly1305** won't take the string as the password, rather derive it into a 32-byte key of pure entropy to feed.
@@ -16,7 +16,7 @@ Problem with algorithms like **SHA-256 / 512**, **MD5** or even **PBKDF2** is th
 
 Now, **Argon2id** solves this by being *intentionally slow* and memory exhausting. It forces the system you are currently using to allocate a specific amount of RAM and time cost PER guess.
 
-The *"average"* (the *"average"* changes depending on your **Argon2id** parameters of `time_cost`, `memory_cost` and `parallelism`) **Argon2id** password hash / guess takes around half a second to a full second. And that in theory limits the amount of possible guesses to something like 24 (on a single GPU) instead of millions or billions like with **SHA**. Again, these numbers VERY vary on your parameters.
+The *"average"* (the *"average"* changes depending on your **Argon2id** parameters of `time_cost`, `memory_cost` and `parallelism`) **Argon2id** password hash / guess takes around half a second to a full second. And that in theory limits the amount of possible guesses to something like 24 guesses per second (on a single GPU) instead of millions or billions like with **SHA**. Again, these numbers VERY vary on your parameters.
 
 ### **The parameters**
 In **MAGE**, you can configure the **Argon2id** parameters yourself! Assuming you know what you are doing...
@@ -38,7 +38,7 @@ Because the salt is unique per archive; attackers cannot use precomputed *"rainb
 ### **Keyfiles (.mgkx)**
 What if you don't trust passwords at all? What if you know a $5 wrench attack is imminent? Enter *~~Sandman~~* the keyfile!
 
-A `.mgkx` file is exactly 512 bytes of cryptographically secure random entropy generated directly by the OS kernel. To put that into comparison... you are more likey to get struck by lightning 200 times in a ROW. Or if you want something more realistic the sun would explode sooner than you bruteforcing 512 bytes of pseudo-random data.
+A `.mgkx` file is exactly 512 bytes of cryptographically secure random entropy generated directly by the OS kernel. To put that into comparison... you are more likely to get struck by lightning 200 times in a ROW. Or if you want something more realistic the sun would explode sooner than you bruteforcing 512 bytes of pseudo-random data.
 
 If you use a keyfile...
 - The pure entropy of the file becomes your password.
