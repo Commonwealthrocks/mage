@@ -130,4 +130,31 @@ VERSION 0.6a - 04/10/2026 [ STARTED ON; 09/09/2026 ]
 - Enforced secure memory wiping (pk::mem_::secure_wipe) across passwords, keyfiles
   and custom entropy buffers upon dialog close.
 
+VERSION 0.7a - 01/11/2026 [ STARTED ON; 25/10/2026 ]
+- Fixed not being able to encrypt files / folders if their MAX_PATH was over 260 characters on Windows.
+- Fixed path support with UTF-8 support across Windows.
+- Fixed mix of slashes (/) and backslashes (\) mixing into paths on Windows.
+- Fixed Qt's folder picker titlebar not being darkmode.
+- Fixed and optimized cancellation for massive file counts.
+- Fixed progress dialogs not showing any progess till encryption started.
+- Fixed colons being accepted in archive paths to eliminate NTFS alternate data stream (ADS) bypasses.
+- Fixed archive verification dialog and logs displaying the same compression algorithm no matter what.
+- Added timezone flag when creating an archive verification log.
+- Added ability to send MAGE to background (task tray) when encrypting / decrypting.
+- Added new file conflict dialog.
+- Added RAII partial file cleanup guard.
+- Added circular scroll looping for comboboxes on SHIFT / M2 + MOUSE WHEEL.
+- Added PNG fallback for window icons on Linux / X11.
+- Added 3 new SVGs.
+- Added MAGE test suite to test general stability.
+- Added fuzzying for header and for path handler of MAGE.
+- Added CMakeLists.txt flag for headless compilation (no Qt6 GUI).
+- Re-worked custom message dialog.
+- Re-worked and split how MAGE stores and encrypts settings.
+- POSIX-like OSes can generate random bytes via NaCl's CSPRNG API.
+- Enforced atomic 0600 file permissions and symlink rejection on keyfile generation.
+- Decrypt dialog no longer kills itself if at least one archive fails decryption.
+- Archive creation and decrypt archive dialogs now stay hidden while encrypting / decrypting.
+- Normalized SVG icons rendering in dialogs.
+
 ## end
