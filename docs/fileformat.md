@@ -77,8 +77,8 @@ Immediately following the preamble, all `num_entries` records appear sequentiall
 ##### **Entry header:**
 | Size (bytes) | Type | Name | Description |
 |---|---|---|---|
-| 2 | `uint16_t` | **Path length** | Byte length of the relative path string ($L$). |
-| $L$ | `char[L]` | **Relative path** | Normalized UTF-8 relative path (e.g. `sub/document.pdf`). |
+| 2 | `uint16_t` | **Path length** | Byte length of the relative path string (`L`). |
+| `L` | `char[L]` | **Relative path** | Normalized UTF-8 relative path (e.g. `sub/document.pdf`). |
 | 1 | `uint8_t` | **Is directory** | `1` if the entry is a folder, `0` if it is a regular file. |
 | 8 | `uint64_t` | **File size** | Size of the file in bytes (always `0` for directories). |
 
