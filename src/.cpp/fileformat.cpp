@@ -1,5 +1,5 @@
 // fileformat.cpp
-// last updated: 31/10/2026
+// last updated: 01/11/2026
 #include "../.hpp/fileformat.hpp"
 #include "../.hpp/compression.hpp"
 #include <fstream>
@@ -737,6 +737,23 @@ namespace pk::crypto::format
                     throw std::runtime_error("security error -> target file is a symlink or reparse point after open; " + norm_path);
                 }
                 out.exceptions(std::ios::failbit | std::ios::badbit);
+                bool write_success = false;
+                struct unpack_file_guard
+                {
+                    const std::filesystem::path &p;
+                    bool &ok;
+                    std::ofstream &f;
+                    ~unpack_file_guard()
+                    {
+                        if (!ok)
+                        {
+                            if (f.is_open())
+                                f.close();
+                            std::error_code ec;
+                            pk::path::rfs___(p, ec);
+                        }
+                    }
+                } cur_file_guard{target_path, write_success, out};
                 uint64_t remaining = file_size;
                 std::vector<char> write_buf(std::min(chunk_size, std::size_t(1024 * 1024)));
                 struct write_buf_guard
@@ -763,6 +780,7 @@ namespace pk::crypto::format
                     emit_unpack_progress(false, i);
                 }
                 out.close(); // q
+                write_success = true;
             }
 #ifdef _WIN32
             if (has_meta)
